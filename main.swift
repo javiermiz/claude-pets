@@ -16,7 +16,7 @@ struct Session: Identifiable, Decodable {
     var turn: Bool { status == "busy" }        // mid-turn
     var busy: Bool { turn || (waiting ?? 0) > 0 } // not finished until its background work is done too
     var project: String {
-        if cwd.contains("/scratch-workspaces/") { return "Chat (scratch)" }
+        if cwd.contains("/scratch-workspaces/") { return tr("Chat (scratch)") }
         let repo = cwd.components(separatedBy: "/.claude/worktrees/") // worktree -> its repo
         let name = (repo[0] as NSString).lastPathComponent
         return repo.count > 1 ? "\(name) · worktree" : name
@@ -106,7 +106,7 @@ final class Store: ObservableObject {
             .map { f in
                 let meta = f.deletingPathExtension().appendingPathExtension("meta.json")
                 let desc = (try? JSONSerialization.jsonObject(with: Data(contentsOf: meta)) as? [String: Any])?["description"] as? String
-                return Subagent(id: f.lastPathComponent, desc: desc ?? "Subagente")
+                return Subagent(id: f.lastPathComponent, desc: desc ?? tr("Subagent"))
             }
             .sorted { $0.id < $1.id }
     }
@@ -189,10 +189,33 @@ func seed(_ s: Session) -> UInt32 { seed(s.sessionId) }
 func frames(_ key: String) -> [CGImage] { sprites[Int((seed(key) >> 13) % UInt32(sprites.count))] } // low bits barely vary across uuids
 func frames(for s: Session) -> [CGImage] { frames(s.sessionId) }
 
-func ago(_ d: Date) -> String {
-    let f = RelativeDateTimeFormatter()
-    f.locale = Locale(identifier: "es")
-    return f.localizedString(for: d, relativeTo: Date())
+func ago(_ d: Date) -> String { RelativeDateTimeFormatter().localizedString(for: d, relativeTo: Date()) }
+
+// UI strings follow the system language; anything missing falls back to English
+let keys = ["Untitled", "Working · %@", "Waiting on %d in background", "Finished %@", "Started by %@", "Sub-sessions",
+            "Subagents working", "Click to open", "Finished · click to see it", "Open at login", "Quit", "Subagent", "Chat (scratch)"]
+let table: [String: [String]] = [
+    "es": ["Sin nombre", "Trabajando · %@", "Esperando %d en segundo plano", "Terminó %@", "Lanzada por %@", "Sub-sesiones",
+           "Subagentes trabajando", "Clic para abrir", "Terminó · clic para verlo", "Abrir al iniciar sesión", "Salir", "Subagente", "Chat (scratch)"],
+    "pt": ["Sem nome", "Trabalhando · %@", "Aguardando %d em segundo plano", "Terminou %@", "Iniciada por %@", "Subsessões",
+           "Subagentes trabalhando", "Clique para abrir", "Terminou · clique para ver", "Abrir ao iniciar sessão", "Sair", "Subagente", "Chat (scratch)"],
+    "fr": ["Sans nom", "Au travail · %@", "En attente de %d en arrière-plan", "Terminé %@", "Lancée par %@", "Sous-sessions",
+           "Sous-agents au travail", "Cliquer pour ouvrir", "Terminé · cliquer pour voir", "Ouvrir à la connexion", "Quitter", "Sous-agent", "Chat (scratch)"],
+    "de": ["Ohne Namen", "Arbeitet · %@", "Wartet auf %d im Hintergrund", "Fertig %@", "Gestartet von %@", "Untersitzungen",
+           "Arbeitende Subagenten", "Zum Öffnen klicken", "Fertig · zum Ansehen klicken", "Bei Anmeldung öffnen", "Beenden", "Subagent", "Chat (scratch)"],
+    "it": ["Senza nome", "Al lavoro · %@", "In attesa di %d in background", "Finito %@", "Avviata da %@", "Sottosessioni",
+           "Subagenti al lavoro", "Clicca per aprire", "Finito · clicca per vederlo", "Apri al login", "Esci", "Subagente", "Chat (scratch)"],
+    "ja": ["無題", "作業中 · %@", "バックグラウンドで%d件待機中", "完了 %@", "起動元: %@", "サブセッション",
+           "作業中のサブエージェント", "クリックで開く", "完了 · クリックで表示", "ログイン時に開く", "終了", "サブエージェント", "チャット (scratch)"],
+    "zh": ["未命名", "工作中 · %@", "正在等待 %d 个后台任务", "已完成 %@", "由 %@ 启动", "子会话",
+           "工作中的子代理", "点击打开", "已完成 · 点击查看", "登录时打开", "退出", "子代理", "聊天 (scratch)"],
+    "ko": ["이름 없음", "작업 중 · %@", "백그라운드 작업 %d개 대기 중", "완료 %@", "시작한 세션: %@", "하위 세션",
+           "작업 중인 서브에이전트", "클릭하여 열기", "완료 · 클릭하여 보기", "로그인 시 열기", "종료", "서브에이전트", "채팅 (scratch)"],
+]
+let lang = Locale.preferredLanguages.first?.components(separatedBy: "-").first ?? "en"
+func tr(_ en: String, _ args: CVarArg...) -> String {
+    let s = keys.firstIndex(of: en).flatMap { table[lang]?[$0] } ?? en
+    return String(format: s, arguments: args)
 }
 
 // 3. Views
@@ -233,7 +256,7 @@ struct PetView: View {
             .onHover { inside in
                 if inside { world.hovered = s.id } else if world.hovered == s.id { world.hovered = nil }
             }
-            .contextMenu { Button("Salir") { NSApp.terminate(nil) } }
+            .contextMenu { Button(tr("Quit")) { NSApp.terminate(nil) } }
     }
 }
 
@@ -246,28 +269,28 @@ struct Card: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Image(decorative: frames(for: s)[0], scale: 1).interpolation(.none).resizable().frame(width: 36, height: 26)
-                Text(s.name ?? "Sin nombre").font(.headline).lineLimit(2)
+                Text(s.name ?? tr("Untitled")).font(.headline).lineLimit(2)
             }
             Label(s.project, systemImage: "folder").font(.caption)
-            Label(s.turn ? "Trabajando · \(ago(s.since))"
-                  : s.busy ? "Esperando \(s.waiting ?? 0) en segundo plano" : "Terminó \(ago(s.since))",
+            Label(s.turn ? tr("Working · %@", ago(s.since))
+                  : s.busy ? tr("Waiting on %d in background", s.waiting ?? 0) : tr("Finished %@", ago(s.since)),
                   systemImage: s.turn ? "bolt.fill" : s.busy ? "hourglass" : "checkmark.circle.fill")
                 .font(.caption).foregroundStyle(s.busy ? .green : .secondary)
             if let p = store.parent(of: s) {
-                Label("Lanzada por \(p.name ?? p.project)", systemImage: "arrow.turn.down.right").font(.caption)
+                Label(tr("Started by %@", p.name ?? p.project), systemImage: "arrow.turn.down.right").font(.caption)
             }
             if !kids.isEmpty {
-                Text("Sub-sesiones").font(.caption.bold()).padding(.top, 4)
+                Text(tr("Sub-sessions")).font(.caption.bold()).padding(.top, 4)
                 ForEach(kids) { k in
                     Label(k.name ?? k.project, systemImage: k.busy ? "gearshape.fill" : "moon.zzz.fill")
                         .font(.caption).foregroundStyle(k.busy ? .primary : .secondary).lineLimit(1)
                 }
             }
             if !subs.isEmpty {
-                Text("Subagentes trabajando").font(.caption.bold()).padding(.top, 4)
+                Text(tr("Subagents working")).font(.caption.bold()).padding(.top, 4)
                 ForEach(subs) { a in Label(a.desc, systemImage: "pawprint.fill").font(.caption).lineLimit(1) }
             }
-            Text(s.busy ? "Clic para abrir" : "Terminó · clic para verlo").font(.caption2).foregroundStyle(.tertiary).padding(.top, 2)
+            Text(s.busy ? tr("Click to open") : tr("Finished · click to see it")).font(.caption2).foregroundStyle(.tertiary).padding(.top, 2)
         }
         .padding(12)
         .frame(width: 300, alignment: .leading)
@@ -331,9 +354,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         status.button?.image = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: "Claude Pets")
         let menu = NSMenu()
         menu.delegate = self
-        menu.addItem(NSMenuItem(title: "Abrir al iniciar sesión", action: #selector(toggleLogin), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: tr("Open at login"), action: #selector(toggleLogin), keyEquivalent: ""))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Salir", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: tr("Quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         status.menu = menu
 
         let screen = NSScreen.main!.visibleFrame
