@@ -33,6 +33,8 @@ Ou depuis un clone :
 git clone https://github.com/javiermiz/claude-pets && cd claude-pets && ./build.sh
 ```
 
+**Ou téléchargez l'application déjà compilée :** récupérez `ClaudePets.zip` dans les [Releases](https://github.com/javiermiz/claude-pets/releases/latest), décompressez-le et déplacez `ClaudePets.app` dans Applications. Elle n'est pas notarisée par Apple, donc macOS la bloque la première fois : ouvrez **Réglages Système → Confidentialité et sécurité** et cliquez sur **Ouvrir quand même**, ou lancez `xattr -dr com.apple.quarantine /Applications/ClaudePets.app`.
+
 La 🐾 de la barre des menus propose **Ouvrir à la connexion** et **Quitter**. Un clic droit sur un animal quitte aussi l'application.
 
 Pour mettre à jour, relancez la commande d'installation. Pour désinstaller, quittez l'application et supprimez `~/Applications/ClaudePets.app`.

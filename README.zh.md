@@ -33,6 +33,8 @@ curl -fsSL https://raw.githubusercontent.com/javiermiz/claude-pets/main/install.
 git clone https://github.com/javiermiz/claude-pets && cd claude-pets && ./build.sh
 ```
 
+**也可以直接下载已编译好的应用：** 从 [Releases](https://github.com/javiermiz/claude-pets/releases/latest) 下载 `ClaudePets.zip`，解压后把 `ClaudePets.app` 移到“应用程序”文件夹。该应用未经过 Apple 公证，首次打开时 macOS 会阻止它：打开**系统设置 → 隐私与安全性**，点击**仍要打开**，或者运行 `xattr -dr com.apple.quarantine /Applications/ClaudePets.app`。
+
 菜单栏中的 🐾 提供**登录时打开**和**退出**。右键点击宠物也可以退出。
 
 要更新，再运行一次安装命令即可。要卸载，退出应用并删除 `~/Applications/ClaudePets.app`。

@@ -33,6 +33,8 @@ curl -fsSL https://raw.githubusercontent.com/javiermiz/claude-pets/main/install.
 git clone https://github.com/javiermiz/claude-pets && cd claude-pets && ./build.sh
 ```
 
+**ビルド済みのアプリをダウンロードすることもできます：** [Releases](https://github.com/javiermiz/claude-pets/releases/latest) から `ClaudePets.zip` を入手して展開し、`ClaudePets.app` をアプリケーションフォルダに移動します。Apple の公証を受けていないため、初回は macOS にブロックされます。**システム設定 → プライバシーとセキュリティ** を開いて**このまま開く**をクリックするか、`xattr -dr com.apple.quarantine /Applications/ClaudePets.app` を実行してください。
+
 メニューバーの 🐾 から**ログイン時に開く**と**終了**を選べます。ペットを右クリックしても終了できます。
 
 アップデートするには、インストールコマンドをもう一度実行します。アンインストールするには、アプリを終了して `~/Applications/ClaudePets.app` を削除します。

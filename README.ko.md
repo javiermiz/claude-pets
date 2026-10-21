@@ -33,6 +33,8 @@ curl -fsSL https://raw.githubusercontent.com/javiermiz/claude-pets/main/install.
 git clone https://github.com/javiermiz/claude-pets && cd claude-pets && ./build.sh
 ```
 
+**또는 빌드된 앱을 내려받으세요:** [Releases](https://github.com/javiermiz/claude-pets/releases/latest)에서 `ClaudePets.zip`을 받아 압축을 풀고 `ClaudePets.app`을 응용 프로그램 폴더로 옮기세요. Apple의 공증을 받지 않았기 때문에 처음에는 macOS가 실행을 막습니다. **시스템 설정 → 개인정보 보호 및 보안**에서 **그래도 열기**를 누르거나, `xattr -dr com.apple.quarantine /Applications/ClaudePets.app`를 실행하세요.
+
 메뉴 막대의 🐾에서 **로그인 시 열기**와 **종료**를 선택할 수 있습니다. 펫을 우클릭해도 종료됩니다.
 
 업데이트하려면 설치 명령을 다시 실행하세요. 제거하려면 앱을 종료하고 `~/Applications/ClaudePets.app`을 삭제하세요.
