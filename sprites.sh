@@ -5,7 +5,9 @@ set -e
 cd "$(dirname "$0")"
 PXL=${PXL:-"node $HOME/.claude/skills/pxl-pixel-art/bin/pxl.js"}
 $PXL build pets.px.js >/dev/null
-rm -rf assets/pets && mkdir -p assets/pets && cp out/anims/*.png assets/pets/
+rm -rf assets/pets assets/workers && mkdir -p assets/pets assets/workers
+for f in out/anims/*.png; do case $(basename "$f") in worker_*|desk_side*) cp "$f" assets/workers/ ;; *) cp "$f" assets/pets/ ;; esac; done
+cp out/sprites/chair_side.png out/sprites/meeting_table.png assets/workers/
 
 # icon: pixel-perfect upscale of out/scenes/icon.png with rounded corners
 python3 - <<'PY'

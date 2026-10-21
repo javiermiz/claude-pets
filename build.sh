@@ -7,8 +7,8 @@ command -v swiftc >/dev/null || { echo "swiftc not found. Install the Command Li
 
 APP=${APP:-~/Applications/ClaudePets.app} # release.sh builds into dist/ instead
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-rm -rf "$APP/Contents/Resources/pets"
-cp -R assets/pets assets/AppIcon.icns "$APP/Contents/Resources/"
+rm -rf "$APP/Contents/Resources/pets" "$APP/Contents/Resources/workers"
+cp -R assets/pets assets/workers assets/AppIcon.icns "$APP/Contents/Resources/"
 # universal binary: Apple Silicon + Intel
 tmp=$(mktemp -d)
 for arch in arm64 x86_64; do
@@ -24,7 +24,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleIdentifier</key><string>com.javiermiz.claudepets</string>
   <key>CFBundleName</key><string>Claude Pets</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleShortVersionString</key><string>1.1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
 </dict></plist>

@@ -6,14 +6,20 @@ Tus sesiones de [Claude Code](https://claude.com/claude-code) como mascotas 8-bi
 
 ![Claude Pets](docs/zoo.png)
 
+![Workers](docs/workers.png)
+
 - **Cada sesión que trabaja en este Mac es una mascota.** A cada sesión le toca siempre el mismo animal (hay 23) y lleva su nombre encima.
+- **Dos estilos**, a elegir en el menú 🐾: mascotas que pasean, o **trabajadores** de oficina que teclean en su escritorio, hacen una **reunión de equipo** alrededor de una mesa cuando su sesión tiene subagentes y saltan de alegría al terminar.
+- **Burbujas** que dicen qué hace cada agente en ese momento (⌨️ el comando, ✏️ el archivo que edita…) o, cuando te toca, qué te dijo.
+- **Resúmenes cortitos** (opcional): si el CLI `claude` tiene sesión iniciada, Claude Haiku escribe una frase de 7 palabras para cada burbuja, con tu suscripción.
+- **Una notificación** (con sonido) cuando una sesión pasa de trabajar a esperar tu respuesta. Al pulsarla se abre la sesión.
 - Las que **trabajan** caminan. Las que **terminaron** se tumban con un ✓ verde y esperan a que les hagas clic.
 - **Clic** en una mascota para ir a esa sesión en la app de escritorio de Claude.
 - **Pasa el ratón** por encima para ver una tarjeta: proyecto, estado, desde cuándo, sub-sesiones y subagentes activos.
 - Los **subagentes** siguen a su sesión como mascotas pequeñas en fila. Las **sub-sesiones** lanzadas desde otra sesión llevan una `↳`.
-- **El trabajo en segundo plano cuenta:** una sesión que espera comandos o subagentes en segundo plano muestra ⏳ y sigue caminando hasta que terminan.
+- **El trabajo en segundo plano cuenta:** una sesión que espera comandos o subagentes en segundo plano muestra ⏳ hasta que terminan. Los comandos que llevan más de 10 minutos (vigilantes, servidores) no cuentan.
 - **Los clics atraviesan** el espacio vacío, así que la franja nunca estorba.
-- **Habla tu idioma:** English, Español, Português, Français, Deutsch, Italiano, 日本語, 简体中文, 한국어 (sigue el idioma del sistema).
+- **Habla tu idioma:** English, Español, Português, Français, Deutsch, Italiano, 日本語, 简体中文, 한국어 (el del Mac, o el que elijas en 🌐 del menú).
 
 ![Walk cycle](docs/cat-walk.png)
 
@@ -41,7 +47,7 @@ Para actualizar, vuelve a ejecutar el comando de instalación. Para desinstalar,
 
 ## Cómo funciona
 
-Todo es local y de solo lectura. Nada sale de tu Mac.
+Todo es local y de solo lectura. Lo único que sale de tu Mac son los resúmenes opcionales (ver Límites).
 
 | Qué | De dónde |
 | -- | -- |
@@ -50,12 +56,14 @@ Todo es local y de solo lectura. Nada sale de tu Mac.
 | Sub-sesiones (del transcript de la sesión madre) | `start_session` → `session_id: local_…` |
 | Comandos en segundo plano (procesos hijos) | `zsh`/`bash` ⟵ `claude` |
 | Abrir una sesión (deep link de la app de escritorio) | `claude://code/continue?session=<id>` |
+| Burbujas (última acción, último mensaje) | `assistant` → `tool_use` / `text` |
+| Resúmenes cortitos (opcional) | `claude -p --model haiku` |
 
 Límites:
 
 - Solo aparecen las sesiones de este Mac. Las sesiones en la nube no escriben en `~/.claude`.
 - Solo aparecen las sesiones que se vieron trabajando desde que se abrió la app.
-- Un servidor que corre en segundo plano (un dev server…) mantiene su mascota caminando hasta que lo pares.
+- Los resúmenes envían a Anthropic fragmentos cortos de lo que hacen tus sesiones (la última petición, acciones recientes o el último mensaje) a través de tu propio login de Claude Code. Sin el CLI con sesión iniciada no se envía nada.
 
 ## Cambiar el arte
 

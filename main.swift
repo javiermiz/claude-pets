@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import ServiceManagement
+import UserNotifications
 
 // 1. Data — one JSON per live Claude Code session in ~/.claude/sessions
 struct Session: Identifiable, Decodable {
@@ -24,14 +25,127 @@ struct Session: Identifiable, Decodable {
     var since: Date { Date(timeIntervalSince1970: (statusUpdatedAt ?? 0) / 1000) }
 }
 
-struct Subagent: Identifiable { let id: String; let desc: String }
+struct Subagent: Identifiable { let id: String; let desc: String; var doing: String? = nil }
+
+// What an agent is up to, from the newest assistant entry of its transcript: its latest action
+// ("⌨️ Run the tests", "✏️ main.swift"…) and the latest thing it said ("💬 …").
+struct Activity {
+    var doing: String?, said: String?
+    var recent: [String] = []   // last actions, oldest first (input for the summary)
+    var saidFull: String?       // the last message, longer (input for the summary)
+    var prompt: String?         // what the user last asked
+}
+func activity(in data: Data) -> Activity {
+    var out = Activity()
+    for raw in data.split(separator: 10).reversed() where out.recent.count < 8 || out.said == nil || out.prompt == nil {
+        guard raw.count < 3_000_000, let o = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else { continue }
+        if o["type"] as? String == "last-prompt" { out.prompt = out.prompt ?? (o["lastPrompt"] as? String).map { String($0.prefix(400)) }; continue }
+        guard raw.range(of: Data("\"assistant\"".utf8)) != nil, o["type"] as? String == "assistant",
+              let blocks = (o["message"] as? [String: Any])?["content"] as? [[String: Any]] else { continue }
+        for b in blocks.reversed() {
+            if b["type"] as? String == "tool_use" {
+                let d = describe(tool: b["name"] as? String ?? "", b["input"] as? [String: Any] ?? [:])
+                out.doing = out.doing ?? d
+                if out.recent.count < 8 { out.recent.insert(d, at: 0) }
+            }
+            if b["type"] as? String == "text", let t = b["text"] as? String, let line = firstLine(t) {
+                if out.said == nil { out.said = "💬 " + line; out.saidFull = String(t.prefix(600)) }
+                out.doing = out.doing ?? "💬 " + line
+                if out.recent.count < 8 { out.recent.insert("💬 " + line, at: 0) }
+            }
+        }
+    }
+    return out
+}
+// cut at a word boundary instead of mid-word
+func short(_ t: String, _ n: Int = 70) -> String {
+    guard t.count > n else { return t }
+    let cut = t.prefix(n)
+    return (cut.lastIndex(of: " ").map { String(cut[..<$0]) } ?? String(cut)) + "…"
+}
+
+// Tiny labels for the bubbles, written by Claude Haiku through the user's own Claude Code CLI
+// (`claude -p`, their subscription, no API key). One call at a time; if the CLI is missing or
+// not logged in it backs off for 10 minutes and the bubbles fall back to the raw activity.
+final class Summarizer {
+    static let shared = Summarizer()
+    static let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches/claude-pets")
+    private var cache: [String: (input: String, text: String, at: Date)] = [:]
+    private var running = false, pausedUntil = Date.distantPast
+    private let exe: URL? = ["~/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+        .map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+
+    func label(_ key: String, input: String, every: TimeInterval) -> String? {
+        let c = cache[key]
+        if !running, let exe, Date() > pausedUntil, c == nil || (c!.input != input && -c!.at.timeIntervalSinceNow > every) {
+            run(exe, key, input)
+        }
+        return c.flatMap { $0.text.isEmpty ? nil : $0.text }
+    }
+
+    private func run(_ exe: URL, _ key: String, _ input: String) {
+        running = true
+        try? FileManager.default.createDirectory(at: Summarizer.dir, withIntermediateDirectories: true)
+        let language = Locale(identifier: "en").localizedString(forLanguageCode: lang) ?? "English"
+        let prompt = """
+        Write a tiny status label (at most 7 words) in \(language) for a speech bubble over an AI coding agent. \
+        If it is working, say what it is doing, starting with a gerund. If it finished its turn, say what it needs \
+        from the user or what it delivered. Reply with only the label: no quotes, no emoji, no final period.
+
+        \(input)
+        """
+        let p = Process()
+        p.executableURL = exe
+        p.arguments = ["-p", "--model", "haiku", "--no-session-persistence", prompt]
+        p.currentDirectoryURL = Summarizer.dir // its own session file lands here, so the app can skip it
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        p.terminationHandler = { [weak self] proc in
+            let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"'."))
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let ok = proc.terminationStatus == 0 && !out.isEmpty && out.count < 120
+                if !ok { self.pausedUntil = Date().addingTimeInterval(600) }
+                self.cache[key] = (input, ok ? out : self.cache[key]?.text ?? "", Date())
+                self.running = false
+            }
+        }
+        do { try p.run() } catch { running = false; pausedUntil = Date().addingTimeInterval(600) }
+    }
+}
+func firstLine(_ t: String) -> String? {
+    t.replacingOccurrences(of: #"[*`#>]"#, with: "", options: .regularExpression)
+        .split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }.map { String($0.prefix(140)) }
+}
+func describe(tool: String, _ i: [String: Any]) -> String {
+    func str(_ k: String) -> String { (i[k] as? String).flatMap(firstLine) ?? "" }
+    let file = ((i["file_path"] as? String ?? i["notebook_path"] as? String ?? "") as NSString).lastPathComponent
+    switch tool {
+    case "Bash": return "⌨️ " + (str("description").isEmpty ? str("command") : str("description"))
+    case "Edit", "Write", "MultiEdit", "NotebookEdit": return "✏️ " + file
+    case "Read": return "📖 " + file
+    case "Grep", "Glob": return "🔎 " + str("pattern")
+    case "WebFetch": return "🌐 " + (URL(string: str("url"))?.host ?? "web")
+    case "WebSearch": return "🌐 " + str("query")
+    case "Agent", "Task": return "🤖 " + str("description")
+    case "TodoWrite": return "📋"
+    default:
+        if tool.hasPrefix("mcp__") { return "🔌 " + (tool.split(separator: "_").last.map(String.init) ?? tool) }
+        return "🔧 " + tool
+    }
+}
 
 final class Store: ObservableObject {
     @Published var sessions: [Session] = []
     var all: [Session] = []                  // every live session, for parent/child names
     var parentOf: [String: String] = [:]     // child hostSessionId -> parent sessionId
     var subagents: [String: [Subagent]] = [:] // sessionId -> running Agent-tool subagents
-    private var seenBusy: Set<String> = []   // finished but not yet clicked = "done"
+    var activities: [String: Activity] = [:]  // sessionId -> what it's doing / last said
+    var labels: [String: String] = [:]        // sessionId -> tiny summary for the bubble
+    private var seenBusy: Set<String> = []    // finished but not yet clicked = "done"
+    private var wasBusy: Set<String> = []
     private var transcript: [String: URL] = [:]
     private var offset: [String: UInt64] = [:]
     private let home = FileManager.default.homeDirectoryForCurrentUser
@@ -47,6 +161,7 @@ final class Store: ObservableObject {
         all = files.filter { $0.pathExtension == "json" }
             .compactMap { try? JSONDecoder().decode(Session.self, from: Data(contentsOf: $0)) }
             .filter { kill($0.pid, 0) == 0 } // stale files from dead processes
+            .filter { $0.cwd != Summarizer.dir.path } // the bubble summarizer's own `claude -p` runs
         all.forEach(scanLinks)
         for i in all.indices {
             subagents[all[i].id] = runningSubagents(all[i])
@@ -56,7 +171,26 @@ final class Store: ObservableObject {
                 if s.busy { seenBusy.insert(s.id) }
                 return seenBusy.contains(s.id)
             }
+        // a session that just went from working to waiting for you: tell the user
+        for s in live where !s.busy && wasBusy.contains(s.id) { notifyReady(s) }
+        wasBusy = Set(live.filter(\.busy).map(\.id))
+        for s in live { // labels: per task while working (at most every 90 s), once when the turn ends
+            guard let a = activities[s.id] else { continue }
+            let input = s.busy
+                ? "The user asked: \(a.prompt ?? "?")\nRecent actions, oldest first:\n" + a.recent.joined(separator: "\n")
+                : "It finished its turn and told the user:\n" + (a.saidFull ?? a.said ?? "")
+            labels[s.id] = Summarizer.shared.label(s.id + (s.busy ? "w" : "d") + lang, input: input, every: s.busy ? 90 : 0)
+        }
         sessions = live.sorted { ($0.busy ? 0 : 1, -$0.since.timeIntervalSince1970) < ($1.busy ? 0 : 1, -$1.since.timeIntervalSince1970) }
+    }
+
+    func notifyReady(_ s: Session) {
+        let c = UNMutableNotificationContent()
+        c.title = s.name ?? s.project
+        c.body = tr("Ready for your reply")
+        c.sound = .default
+        c.userInfo = ["session": s.hostSessionId ?? ""]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: s.id + "\(Date().timeIntervalSince1970)", content: c, trigger: nil))
     }
 
     func children(of s: Session) -> [Session] { all.filter { parentOf[$0.hostSessionId ?? ""] == s.id } }
@@ -79,19 +213,27 @@ final class Store: ObservableObject {
         try? h.seek(toOffset: offset[s.id] ?? 0)
         guard let data = try? h.readToEnd(), let nl = data.lastIndex(of: 10) else { return }
         offset[s.id] = (offset[s.id] ?? 0) + UInt64(nl + 1)
+        let fresh = activity(in: data[...nl]), old = activities[s.id] // keep the older values for whatever this chunk lacks
+        activities[s.id] = Activity(doing: fresh.doing ?? old?.doing, said: fresh.said ?? old?.said,
+                                    recent: Array(((old?.recent ?? []) + fresh.recent).suffix(8)),
+                                    saidFull: fresh.saidFull ?? old?.saidFull, prompt: fresh.prompt ?? old?.prompt)
         guard data.range(of: Data("(session_id: local_".utf8)) != nil else { return }
         let text = String(decoding: data[...nl], as: UTF8.self)
         for m in text.matches(of: try! Regex(#"\(session_id: (local_[0-9a-f-]{36})"#)) { parentOf[String(text[m.output[1].range!])] = s.id }
     }
 
-    // Background Bash tasks: each runs as a `zsh -c` child of the claude process
+    // Background Bash tasks: each runs as a `zsh -c` child of the claude process. One running for over
+    // 10 minutes is a watcher or a server, not work you're waiting on: it doesn't count.
     private func shells(_ pid: Int32) -> Int {
         var kids = [pid_t](repeating: 0, count: 64)
         let n = Int(proc_listchildpids(pid, &kids, Int32(kids.count * MemoryLayout<pid_t>.size)))
         return kids.prefix(max(0, n)).filter { kid in
             var name = [CChar](repeating: 0, count: 64)
             proc_name(kid, &name, UInt32(name.count))
-            return ["zsh", "bash", "sh"].contains(String(cString: name))
+            var info = proc_bsdinfo()
+            let ok = proc_pidinfo(kid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size)) > 0
+            let age = ok ? Date().timeIntervalSince1970 - Double(info.pbi_start_tvsec) : 0
+            return ["zsh", "bash", "sh"].contains(String(cString: name)) && age < 600
         }.count
     }
 
@@ -106,7 +248,13 @@ final class Store: ObservableObject {
             .map { f in
                 let meta = f.deletingPathExtension().appendingPathExtension("meta.json")
                 let desc = (try? JSONSerialization.jsonObject(with: Data(contentsOf: meta)) as? [String: Any])?["description"] as? String
-                return Subagent(id: f.lastPathComponent, desc: desc ?? tr("Subagent"))
+                // its latest action, from the last 64 KB of its own transcript
+                let h = try? FileHandle(forReadingFrom: f)
+                let size = (try? h?.seekToEnd()) ?? 0
+                try? h?.seek(toOffset: size > 65_536 ? size - 65_536 : 0)
+                let doing = (try? h?.readToEnd()).flatMap { $0 }.map { activity(in: $0).doing } ?? nil
+                try? h?.close()
+                return Subagent(id: f.lastPathComponent, desc: desc ?? tr("Subagent"), doing: doing)
             }
             .sorted { $0.id < $1.id }
     }
@@ -132,6 +280,21 @@ final class World: ObservableObject {
     init() {
         Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in self?.tick() }
     }
+
+    // workers: stations side by side from the left, in the order sessions first appeared
+    private var stationOrder: [String] = []
+    func stations() -> [(s: Session, center: CGFloat)] {
+        let ids = store.sessions.map(\.id)
+        stationOrder = stationOrder.filter { ids.contains($0) } + ids.filter { !stationOrder.contains($0) }
+        var x: CGFloat = 40, out: [(Session, CGFloat)] = []
+        for id in stationOrder {
+            guard let s = store.sessions.first(where: { $0.id == id }) else { continue }
+            let w = Station.width(1 + min(5, store.subagents[id]?.count ?? 0)) * K
+            out.append((s, x + max(w, 200) / 2)); x += max(w, 200) + 30 // room for the name tag; ponytail: no wrapping; past the screen edge they just run off
+        }
+        return out
+    }
+    func anchor(_ s: Session) -> CGFloat { workers ? stations().first { $0.s.id == s.id }?.center ?? pos(s) : pos(s) }
 
     func pos(_ s: Session) -> CGFloat {
         if let p = x[s.id] { return p }
@@ -174,51 +337,107 @@ final class World: ObservableObject {
     }
 }
 
-// Pixel-art pets from pets.px.js (out/anims/*.png: 5 frames side by side, 0-3 walk, 4 lying down)
-let sprites: [[CGImage]] = {
-    let urls = Bundle.main.urls(forResourcesWithExtension: "png", subdirectory: "pets") ?? []
+// Pixel art from pets.px.js, one strip per character. Two styles, picked in the menu bar:
+// pets (5 frames: 0-3 walk, 4 lying down) and workers (12 frames: 6-8 side walk, 11 cheering)
+func strips(_ dir: String, _ n: Int, prefix: String = "") -> [[CGImage]] {
+    let urls = (Bundle.main.urls(forResourcesWithExtension: "png", subdirectory: dir) ?? []).filter { $0.lastPathComponent.hasPrefix(prefix) }
     return urls.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { url in
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
               let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
-        let w = img.width / 5
-        return (0..<5).compactMap { img.cropping(to: CGRect(x: $0 * w, y: 0, width: w, height: img.height)) }
+        let w = img.width / n
+        return (0..<n).compactMap { img.cropping(to: CGRect(x: $0 * w, y: 0, width: w, height: img.height)) }
     }
+}
+let petSprites = strips("pets", 5)
+let workerSprites = strips("workers", 12, prefix: "worker_")
+let office: [String: [CGImage]] = { // desk (3 frames: code, code, off), chair, meeting table — live next to the workers
+    var out: [String: [CGImage]] = [:]
+    for (name, n) in [("desk_side", 3), ("chair_side", 1), ("meeting_table", 1)] {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "workers"),
+              let src = CGImageSourceCreateWithURL(url as CFURL, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { continue }
+        let w = img.width / n
+        out[name] = (0..<n).compactMap { img.cropping(to: CGRect(x: $0 * w, y: 0, width: w, height: img.height)) }
+    }
+    return out
 }()
+var workers: Bool { UserDefaults.standard.string(forKey: "style") == "workers" && !workerSprites.isEmpty }
+func walkFrame(_ step: Int) -> Int { workers ? [6, 7, 6, 8][step % 4] : step % 4 }
+var standFrame: Int { workers ? 6 : 1 }
+func doneFrame(_ t: Double) -> Int { workers ? (Int(t * 3) % 2 == 0 ? 11 : 0) : 4 } // workers jump for joy, pets lie down
 func seed(_ key: String) -> UInt32 { key.utf8.reduce(UInt32(0)) { $0 &* 31 &+ UInt32($1) } }
 func seed(_ s: Session) -> UInt32 { seed(s.sessionId) }
-func frames(_ key: String) -> [CGImage] { sprites[Int((seed(key) >> 13) % UInt32(sprites.count))] } // low bits barely vary across uuids
+func frames(_ key: String) -> [CGImage] { // low bits barely vary across uuids
+    let set = workers ? workerSprites : petSprites
+    return set[Int((seed(key) >> 13) % UInt32(set.count))]
+}
 func frames(for s: Session) -> [CGImage] { frames(s.sessionId) }
 
 func ago(_ d: Date) -> String { RelativeDateTimeFormatter().localizedString(for: d, relativeTo: Date()) }
 
 // UI strings follow the system language; anything missing falls back to English
 let keys = ["Untitled", "Working · %@", "Waiting on %d in background", "Finished %@", "Started by %@", "Sub-sessions",
-            "Subagents working", "Click to open", "Finished · click to see it", "Open at login", "Quit", "Subagent", "Chat (scratch)"]
+            "Subagents working", "Click to open", "Finished · click to see it", "Open at login", "Quit", "Subagent", "Chat (scratch)", "Pets", "Workers", "Ready for your reply"]
 let table: [String: [String]] = [
     "es": ["Sin nombre", "Trabajando · %@", "Esperando %d en segundo plano", "Terminó %@", "Lanzada por %@", "Sub-sesiones",
-           "Subagentes trabajando", "Clic para abrir", "Terminó · clic para verlo", "Abrir al iniciar sesión", "Salir", "Subagente", "Chat (scratch)"],
+           "Subagentes trabajando", "Clic para abrir", "Terminó · clic para verlo", "Abrir al iniciar sesión", "Salir", "Subagente", "Chat (scratch)", "Mascotas", "Trabajadores", "Listo para tu respuesta"],
     "pt": ["Sem nome", "Trabalhando · %@", "Aguardando %d em segundo plano", "Terminou %@", "Iniciada por %@", "Subsessões",
-           "Subagentes trabalhando", "Clique para abrir", "Terminou · clique para ver", "Abrir ao iniciar sessão", "Sair", "Subagente", "Chat (scratch)"],
+           "Subagentes trabalhando", "Clique para abrir", "Terminou · clique para ver", "Abrir ao iniciar sessão", "Sair", "Subagente", "Chat (scratch)", "Mascotes", "Trabalhadores", "Pronto para sua resposta"],
     "fr": ["Sans nom", "Au travail · %@", "En attente de %d en arrière-plan", "Terminé %@", "Lancée par %@", "Sous-sessions",
-           "Sous-agents au travail", "Cliquer pour ouvrir", "Terminé · cliquer pour voir", "Ouvrir à la connexion", "Quitter", "Sous-agent", "Chat (scratch)"],
+           "Sous-agents au travail", "Cliquer pour ouvrir", "Terminé · cliquer pour voir", "Ouvrir à la connexion", "Quitter", "Sous-agent", "Chat (scratch)", "Animaux", "Employés", "Prêt pour ta réponse"],
     "de": ["Ohne Namen", "Arbeitet · %@", "Wartet auf %d im Hintergrund", "Fertig %@", "Gestartet von %@", "Untersitzungen",
-           "Arbeitende Subagenten", "Zum Öffnen klicken", "Fertig · zum Ansehen klicken", "Bei Anmeldung öffnen", "Beenden", "Subagent", "Chat (scratch)"],
+           "Arbeitende Subagenten", "Zum Öffnen klicken", "Fertig · zum Ansehen klicken", "Bei Anmeldung öffnen", "Beenden", "Subagent", "Chat (scratch)", "Haustiere", "Mitarbeiter", "Bereit für deine Antwort"],
     "it": ["Senza nome", "Al lavoro · %@", "In attesa di %d in background", "Finito %@", "Avviata da %@", "Sottosessioni",
-           "Subagenti al lavoro", "Clicca per aprire", "Finito · clicca per vederlo", "Apri al login", "Esci", "Subagente", "Chat (scratch)"],
+           "Subagenti al lavoro", "Clicca per aprire", "Finito · clicca per vederlo", "Apri al login", "Esci", "Subagente", "Chat (scratch)", "Animaletti", "Impiegati", "Pronto per la tua risposta"],
     "ja": ["無題", "作業中 · %@", "バックグラウンドで%d件待機中", "完了 %@", "起動元: %@", "サブセッション",
-           "作業中のサブエージェント", "クリックで開く", "完了 · クリックで表示", "ログイン時に開く", "終了", "サブエージェント", "チャット (scratch)"],
+           "作業中のサブエージェント", "クリックで開く", "完了 · クリックで表示", "ログイン時に開く", "終了", "サブエージェント", "チャット (scratch)", "ペット", "ワーカー", "あなたの返信待ちです"],
     "zh": ["未命名", "工作中 · %@", "正在等待 %d 个后台任务", "已完成 %@", "由 %@ 启动", "子会话",
-           "工作中的子代理", "点击打开", "已完成 · 点击查看", "登录时打开", "退出", "子代理", "聊天 (scratch)"],
+           "工作中的子代理", "点击打开", "已完成 · 点击查看", "登录时打开", "退出", "子代理", "聊天 (scratch)", "宠物", "打工人", "等你回复"],
     "ko": ["이름 없음", "작업 중 · %@", "백그라운드 작업 %d개 대기 중", "완료 %@", "시작한 세션: %@", "하위 세션",
-           "작업 중인 서브에이전트", "클릭하여 열기", "완료 · 클릭하여 보기", "로그인 시 열기", "종료", "서브에이전트", "채팅 (scratch)"],
+           "작업 중인 서브에이전트", "클릭하여 열기", "완료 · 클릭하여 보기", "로그인 시 열기", "종료", "서브에이전트", "채팅 (scratch)", "펫", "직원", "답장을 기다리고 있어요"],
 ]
-let lang = Locale.preferredLanguages.first?.components(separatedBy: "-").first ?? "en"
+// the app's language: picked in the menu bar, or the Mac's own
+var lang: String { UserDefaults.standard.string(forKey: "lang") ?? Locale.preferredLanguages.first?.components(separatedBy: "-").first ?? "en" }
+let languages = [("en", "English"), ("es", "Español"), ("pt", "Português"), ("fr", "Français"), ("de", "Deutsch"),
+                 ("it", "Italiano"), ("ja", "日本語"), ("zh", "简体中文"), ("ko", "한국어")]
 func tr(_ en: String, _ args: CVarArg...) -> String {
     let s = keys.firstIndex(of: en).flatMap { table[lang]?[$0] } ?? en
     return String(format: s, arguments: args)
 }
 
 // 3. Views
+// Speech bubble with what an agent is doing or said
+struct Bubble: View {
+    let text: String
+    var width: CGFloat = 210
+    var body: some View {
+        Text(text).font(.system(size: 10, weight: .medium, design: .rounded)).foregroundStyle(.black)
+            .lineLimit(2).multilineTextAlignment(.leading)
+            .padding(.horizontal, 7).padding(.vertical, 4)
+            .frame(maxWidth: width, alignment: .leading)
+            .background(.white, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.black, lineWidth: 1.5))
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+// Name tag over a pet or a workstation
+func plate(_ s: Session, _ world: World) -> some View {
+    let name = s.name ?? s.project
+    let n = world.store.subagents[s.id]?.count ?? 0
+    return HStack(spacing: 4) {
+        Image(systemName: !s.busy ? "checkmark.circle.fill" : s.turn ? "gearshape.fill" : "hourglass")
+            .rotationEffect(.degrees(s.turn ? world.t * 120 : 0))
+        if world.store.parent(of: s) != nil { Text("↳") }
+        Text(name.count > 24 ? name.prefix(23) + "…" : name)
+        if n > 0 { Text("· \(n) \(Image(systemName: workers ? "person.2.fill" : "pawprint.fill"))").foregroundStyle(.yellow) }
+    }
+    .font(.system(size: 10, weight: .semibold, design: .rounded))
+    .foregroundStyle(.white)
+    .padding(.horizontal, 7).padding(.vertical, 3)
+    .background(s.busy ? Color.black.opacity(0.6) : Color.green, in: Capsule())
+    .fixedSize()
+}
+
 struct PetView: View {
     let s: Session
     @ObservedObject var world: World
@@ -226,30 +445,17 @@ struct PetView: View {
     var body: some View {
         let hovered = world.hovered == s.id
         let f = frames(for: s)
-        // working: walk cycle; done: lies down and waits for a click
-        let i = !s.busy ? 4 : hovered ? 1 : (Int(world.t * 8) + Int(seed(s) % 4)) % 4
-        let name = s.name ?? s.project
+        // working: walk cycle; done: lies down (pets) or cheers (workers) and waits for a click
+        let i = !s.busy ? doneFrame(world.t) : hovered ? standFrame : walkFrame(Int(world.t * 8) + Int(seed(s) % 4))
         Image(decorative: f[i], scale: 1)
             .interpolation(.none)
             .resizable()
             .frame(width: CGFloat(f[i].width) * 3, height: CGFloat(f[i].height) * 3)
             .scaleEffect(x: world.facingRight(s) ? 1 : -1) // sprites face right
             .scaleEffect(hovered ? 1.2 : 1, anchor: .bottom)
+            .offset(y: i == 11 ? -6 : 0) // the cheer is a little jump
             .overlay(alignment: .top) {
-                HStack(spacing: 4) {
-                    Image(systemName: !s.busy ? "checkmark.circle.fill" : s.turn ? "gearshape.fill" : "hourglass")
-                        .rotationEffect(.degrees(s.turn ? world.t * 120 : 0))
-                    if world.store.parent(of: s) != nil { Text("↳") }
-                    Text(name.count > 24 ? name.prefix(23) + "…" : name)
-                    let n = world.store.subagents[s.id]?.count ?? 0
-                    if n > 0 { Text("· \(n) \(Image(systemName: "pawprint.fill"))").foregroundStyle(.yellow) }
-                }
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 7).padding(.vertical, 3)
-                .background(s.busy ? Color.black.opacity(0.6) : Color.green, in: Capsule())
-                .fixedSize()
-                .offset(y: -20 - (s.busy ? 0 : abs(sin(world.t * 4)) * 5)) // done: bounce for attention
+                plate(s, world).offset(y: -20 - (s.busy ? 0 : abs(sin(world.t * 4)) * 5)) // done: bounce for attention
             }
             .contentShape(Rectangle())
             .onTapGesture { world.store.open(s) }
@@ -257,6 +463,77 @@ struct PetView: View {
                 if inside { world.hovered = s.id } else if world.hovered == s.id { world.hovered = nil }
             }
             .contextMenu { Button(tr("Quit")) { NSApp.terminate(nil) } }
+    }
+}
+
+// Workers style: nobody walks. A session works at its desk; with subagents the team meets around a table.
+let K: CGFloat = 3 // screen points per art pixel
+struct Station: View {
+    let s: Session
+    @ObservedObject var world: World
+
+    static func width(_ team: Int) -> CGFloat { team <= 1 ? 36 : CGFloat((team + 1) / 2 * 14 + 34 + team / 2 * 14) }
+
+    func px(_ img: CGImage?, x: CGFloat, up: CGFloat = 0, flip: Bool = false) -> some View {
+        Group {
+            if let img {
+                Image(decorative: img, scale: 1).interpolation(.none).resizable()
+                    .frame(width: CGFloat(img.width) * K, height: CGFloat(img.height) * K)
+                    .scaleEffect(x: flip ? -1 : 1)
+                    .offset(x: x * K, y: -up * K)
+            }
+        }
+    }
+
+    func bubbleLine(_ subs: [Subagent], _ t: Double) -> String? {
+        let a = world.store.activities[s.id], label = world.store.labels[s.id]
+        guard s.busy else { return label.map { "💬 " + $0 } ?? a?.said.map { short($0) } }
+        let mine = label ?? a?.doing.map { short($0) }
+        guard !subs.isEmpty else { return mine }
+        let speaker = Int(t / 2.5) % (subs.count + 1)
+        return speaker == 0 ? mine : "🤖 " + short(subs[speaker - 1].desc, 50) // a subagent's task is already its summary
+    }
+
+    var body: some View {
+        let t = world.t
+        let subs = Array((world.store.subagents[s.id] ?? []).prefix(5))
+        let me = frames(for: s)
+        let cheer = doneFrame(t)
+        ZStack(alignment: .bottomLeading) {
+            if subs.isEmpty { // at the desk
+                px(office["chair_side"]?.first, x: 0)
+                if s.busy { px(me[s.turn ? 9 + Int(t * 5) % 2 : 9], x: 1, up: 1) }
+                else { px(me[cheer], x: -1, up: cheer == 11 ? 3 : 0) } // done: up and cheering
+                px(office["desk_side"]?[s.turn ? Int(t * 2) % 2 : 2], x: 12)
+            } else {          // team meeting: half on each side of the table, the speaker takes turns
+                let team = [me] + subs.map { frames($0.id) }
+                let left = (team.count + 1) / 2
+                let speaker = Int(t / 2.5) % team.count
+                ForEach(0..<team.count, id: \.self) { i in
+                    let x = i < left ? CGFloat(i * 14) : CGFloat(left * 14 + 34 + (i - left) * 14)
+                    let talking = i == speaker && s.busy
+                    let f = i == 0 && !s.busy ? cheer : 6
+                    px(team[i][f], x: x, up: (talking && Int(t * 4) % 2 == 0 ? 1 : 0) + (f == 11 ? 3 : 0), flip: i >= left)
+                }
+                px(office["meeting_table"]?.first, x: CGFloat(left * 14 + 2))
+            }
+        }
+        .frame(width: Station.width(1 + subs.count) * K, height: 22 * K, alignment: .bottomLeading)
+        .overlay(alignment: .top) {
+            VStack(spacing: 4) {
+                // at the desk: what it's doing; in a meeting: whoever has the floor; done: the start of what it told you
+                if let line = bubbleLine(subs, t) { Bubble(text: line) }
+                plate(s, world)
+            }
+            .fixedSize(horizontal: true, vertical: true)
+            .alignmentGuide(.top) { $0[.bottom] + 4 + (s.busy ? 0 : abs(sin(t * 4)) * 5) } // sits on top of the station
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { world.store.open(s) }
+        .onHover { inside in
+            if inside { world.hovered = s.id } else if world.hovered == s.id { world.hovered = nil }
+        }
+        .contextMenu { Button(tr("Quit")) { NSApp.terminate(nil) } }
     }
 }
 
@@ -268,7 +545,7 @@ struct Card: View {
         let kids = store.children(of: s)
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Image(decorative: frames(for: s)[0], scale: 1).interpolation(.none).resizable().frame(width: 36, height: 26)
+                Image(decorative: frames(for: s)[0], scale: 1).interpolation(.none).resizable().aspectRatio(contentMode: .fit).frame(width: 36, height: 28)
                 Text(s.name ?? tr("Untitled")).font(.headline).lineLimit(2)
             }
             Label(s.project, systemImage: "folder").font(.caption)
@@ -288,7 +565,12 @@ struct Card: View {
             }
             if !subs.isEmpty {
                 Text(tr("Subagents working")).font(.caption.bold()).padding(.top, 4)
-                ForEach(subs) { a in Label(a.desc, systemImage: "pawprint.fill").font(.caption).lineLimit(1) }
+                ForEach(subs) { a in Label(a.doing.map { "\(a.desc) — \($0)" } ?? a.desc, systemImage: "pawprint.fill").font(.caption).lineLimit(1) }
+            }
+            if let label = store.labels[s.id] { Text(label).font(.callout.bold()).lineLimit(2) }
+            if let a = store.activities[s.id] {
+                if s.busy, let d = a.doing { Text(d).font(.caption).lineLimit(2) }
+                if let said = a.said { Text(said).font(.caption).foregroundStyle(.secondary).lineLimit(4) }
             }
             Text(s.busy ? tr("Click to open") : tr("Finished · click to see it")).font(.caption2).foregroundStyle(.tertiary).padding(.top, 2)
         }
@@ -312,11 +594,18 @@ struct ContentView: View {
         GeometryReader { geo in
             let floor = geo.size.height - 22
             ZStack(alignment: .topLeading) {
+                if workers {
+                    ForEach(world.stations(), id: \.s.id) { st in
+                        Station(s: st.s, world: world)
+                            .position(x: st.center, y: geo.size.height - 4 - 11 * K)
+                            .zIndex(world.hovered == st.s.id ? 2 : 1)
+                    }
+                } else {
                 ForEach(store.sessions) { s in // subagents trail behind their parent, small
                     ForEach(Array((store.subagents[s.id] ?? []).enumerated()), id: \.element.id) { k, a in
                         let f = frames(a.id)
                         let d = world.sub[s.id + a.id] ?? (world.pos(s), true, false)
-                        Image(decorative: f[d.moving ? (Int(world.t * 10) + k) % 4 : 1], scale: 1)
+                        Image(decorative: f[d.moving ? walkFrame(Int(world.t * 10) + k) : standFrame], scale: 1)
                             .interpolation(.none).resizable()
                             .frame(width: CGFloat(f[0].width) * 2, height: CGFloat(f[0].height) * 2)
                             .scaleEffect(x: d.right ? 1 : -1)
@@ -329,9 +618,10 @@ struct ContentView: View {
                         .position(x: world.pos(s), y: floor)
                         .zIndex(world.hovered == s.id ? 2 : (s.busy ? 0 : 1))
                 }
+                }
                 if let s = store.sessions.first(where: { $0.id == world.hovered }) {
                     Card(s: s, store: store)
-                        .position(x: min(max(world.pos(s), 160), geo.size.width - 160), y: floor - 60)
+                        .position(x: min(max(world.anchor(s), 160), geo.size.width - 160), y: floor - 70)
                         .frame(maxHeight: .infinity, alignment: .bottom)
                         .allowsHitTesting(false)
                         .zIndex(3)
@@ -349,14 +639,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var status: NSStatusItem!
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        UNUserNotificationCenter.current().delegate = self
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         // menu bar paw: launch at login + quit
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         status.button?.image = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: "Claude Pets")
         let menu = NSMenu()
         menu.delegate = self
-        menu.addItem(NSMenuItem(title: tr("Open at login"), action: #selector(toggleLogin), keyEquivalent: ""))
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: tr("Quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         status.menu = menu
 
         let screen = NSScreen.main!.visibleFrame
@@ -372,16 +661,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
     }
 
+    @objc func pickPets() { UserDefaults.standard.set("pets", forKey: "style") }
+    @objc func pickWorkers() { UserDefaults.standard.set("workers", forKey: "style") }
+
     @objc func toggleLogin() {
         let app = SMAppService.mainApp
         try? app.status == .enabled ? app.unregister() : app.register()
     }
 }
 
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    // clicking "Ready for your reply" opens that session
+    func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive r: UNNotificationResponse, withCompletionHandler done: @escaping () -> Void) {
+        if let id = r.notification.request.content.userInfo["session"] as? String, !id.isEmpty,
+           let url = URL(string: "claude://code/continue?session=\(id)") { NSWorkspace.shared.open(url) }
+        done()
+    }
+    func userNotificationCenter(_ c: UNUserNotificationCenter, willPresent n: UNNotification, withCompletionHandler done: @escaping (UNNotificationPresentationOptions) -> Void) {
+        done([.banner, .sound])
+    }
+}
+
 extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.items.first?.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        func item(_ title: String, _ action: Selector, on: Bool = false, key: String = "") -> NSMenuItem {
+            let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            i.state = on ? .on : .off
+            return i
+        }
+        menu.removeAllItems()
+        menu.addItem(item(tr("Pets"), #selector(pickPets), on: !workers))
+        menu.addItem(item(tr("Workers"), #selector(pickWorkers), on: workers))
+        menu.addItem(.separator())
+        let langs = NSMenu()
+        for (code, name) in languages {
+            let i = item(name, #selector(pickLanguage(_:)), on: lang == code)
+            i.representedObject = code
+            langs.addItem(i)
+        }
+        let langItem = NSMenuItem(title: "🌐 " + (languages.first { $0.0 == lang }?.1 ?? lang), action: nil, keyEquivalent: "")
+        langItem.submenu = langs
+        menu.addItem(langItem)
+        menu.addItem(item(tr("Open at login"), #selector(toggleLogin), on: SMAppService.mainApp.status == .enabled))
+        menu.addItem(.separator())
+        menu.addItem(item(tr("Quit"), #selector(NSApplication.terminate(_:)), key: "q"))
     }
+    @objc func pickLanguage(_ sender: NSMenuItem) { UserDefaults.standard.set(sender.representedObject as? String, forKey: "lang") }
 }
 
 let app = NSApplication.shared
