@@ -241,7 +241,7 @@ scene("icon", { w: 24, h: 24, bg: "#e8e4f0" }, stamp("cat", 1, 5, { frame: 0 }))
 
 // =============== workers: the alternative style (menu bar 🐾 → Workers)
 // 14x14 + outline. Frames: 0-2 front, 3-5 back, 6-8 side (faces right), 9-10 seated typing, 11 cheering,
-// 12 held up by the cursor (arms up, legs dangling). Body, hair and accessory are separate layers, so every
+// 12 and 15 held up by the cursor (arms up, legs kicking), 13-14 waving (your turn), 16 seated sipping coffee. Body, hair and accessory are separate layers, so every
 // worker mixes a haircut, an accessory and its colors.
 const m = (r) => r + [...r].reverse().join("")
 const M = (rows) => rows.map(m).join("\n")
@@ -287,8 +287,10 @@ const ACCESSORIES = { // y: the row it starts on (pxl trims leading empty rows)
 const LEGS = {
   stand: "....nn..nn....\n....DD..DD....", a: "....nn..nn....\n....DD........", b: "....nn..nn....\n........DD....",
   side: ".....nn.......\n.....DD.......", sa: "....n...n.....\n...DD...DD....", sb: "....n..n......\n....D..D......",
-  dangle: "...nn....nn...\n...D......D...",
+  dangle: "...nn....nn...\n...D......D...", kick: "..nn......nn..\n..D........D..",
 }
+// one arm up, waving: the hand swings between two spots
+const WAVE = (low) => [grid(12, 9, "_\n_"), grid(13, low ? 3 : 2, low ? "S\nU\nU\nU\nU" : "S\nU\nU\nU\nU\nU"), grid(12, 8, "U")]
 // both arms raised from the shoulders, hands over the head (cheering, or held up by the cursor)
 const ARMS_UP = [grid(0, 9, "._.........._.\n._.........._."), grid(0, 1, "S............S\nU............U\nU............U\nU............U\nU............U\nU............U\n.U..........U.")]
 function worker(name, swap, cut, acc) {
@@ -305,6 +307,10 @@ function worker(name, swap, cut, acc) {
     seated([grid(0, 10, ".......uUu...."), grid(10, 9, "SS")]),
     pose("front", "stand", [...ARMS_UP, grid(6, 6, "kk")]),
     pose("front", "dangle", [...ARMS_UP, grid(6, 6, "kk")]),
+    pose("front", "stand", [...WAVE(false), grid(6, 6, "kk")]),
+    pose("front", "stand", [...WAVE(true), grid(6, 6, "kk")]),
+    pose("front", "kick", [...ARMS_UP, grid(6, 6, "kk")]),
+    seated([grid(0, 8, ".........ww..."), grid(0, 9, "........Sww..."), grid(0, 10, ".......uu.....")]), // mug at the mouth
   )
 }
 const SKIN = ["#f2c9a0", "#e0ac7e", "#b97a4f", "#8f5a36"]
@@ -327,8 +333,8 @@ for (let i = 0; i < WORKERS; i++) {
 }
 scene("crew", { w: 8 * 18, h: 3 * 18, bg: "#e8e4f0" },
   ...Array.from({ length: WORKERS }, (_, i) => stamp("worker_" + String(i).padStart(2, "0"), (i % 8) * 18 + 1, Math.floor(i / 8) * 18 + 1, { frame: 0 })))
-scene("poses", { w: 13 * 17, h: 18, bg: "#e8e4f0" },
-  ...Array.from({ length: 13 }, (_, f) => stamp("worker_00", f * 17 + 1, 1, { frame: f })))
+scene("poses", { w: 17 * 17, h: 18, bg: "#e8e4f0" },
+  ...Array.from({ length: 17 }, (_, f) => stamp("worker_00", f * 17 + 1, 1, { frame: f })))
 
 // workstation and meeting table for the workers style (side view, worker sits on the left facing right)
 anim("desk_side", { w: 22, h: 14, outline: "k" },

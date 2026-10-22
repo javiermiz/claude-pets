@@ -39,7 +39,7 @@ pets.onState((s) => {
   st = s
   for (const [dir, names] of Object.entries(s.sprites)) for (const name of names) {
     if (img[name]) continue
-    const i = new Image(), n = dir === 'pets' ? 5 : name.startsWith('worker_') ? 13 : name === 'desk_side' ? 3 : 1
+    const i = new Image(), n = dir === 'pets' ? 5 : name.startsWith('worker_') ? 17 : name === 'desk_side' ? 3 : 1
     i.onload = () => (img[name] = { url: i.src, w: i.width / n, h: i.height, n })
     i.src = `assets/${dir}/${name}.png`
   }
@@ -78,6 +78,64 @@ function look(id, slot) {
 let t = 0, hovered = null, mouse = null, inside = false, last = performance.now(), order = []
 const pos = (id) => x[id] ??= 40 + Math.random() * Math.max(1, innerWidth - 80)
 const right = (id) => (vx[id] ?? -1) > 0
+// Particles: tiny pixels and glyphs that tell each state apart (confetti when a session finishes, sparkles
+// while it waits for you, sweat while dragged, steam from the coffee, keys flying off the keyboard…).
+// y is measured up from the bottom of the window, like the stations.
+let particles = []
+const doneSince = {}, seen = new Set()
+let lastHover = null
+const R = (a, b) => a + Math.random() * (b - a)
+const emit = (p) => particles.length < 500 && particles.push({ age: 0, size: 3, color: '#fff', gravity: 0, vx: 0, vy: 0, ...p })
+const CONFETTI = ['#ff6fa8', '#ffd84a', '#7fe0c0', '#f0a04b', '#7fd3ff', '#b48ce0', '#7fcf6a']
+// what a worker does when its session is finished: celebrates for a moment, then waves until you come
+const celebrate = (id) => t - (doneSince[id] ?? t) < 2.5 ? (Math.floor(t * 3) % 2 ? 0 : 11) : (Math.floor(t * 3) % 2 ? 14 : 13)
+function particlesTick(dt) {
+  const every = (rate) => Math.random() < rate * dt
+  if (workers()) for (const { s, center } of stations()) {
+    const id = s.id, l = look(id, center), team = s.subs.length > 0, held = drag?.moved && drag.id === id
+    const W = stationWidth(1 + Math.min(5, s.subs.length)) * K, left = l.x - W / 2
+    const head = { x: team ? left + 8 * K : left + (s.busy ? 8 : 6) * K, y: 4 + l.lift + 15 * K }
+    if (!seen.has(id)) { // a new session arrives in a puff of smoke
+      seen.add(id)
+      for (let i = 0; i < 14; i++) emit({ x: l.x + R(-40, 40), y: 4 + R(10, 50), vx: R(-30, 30), vy: R(10, 40), life: R(.5, .9), size: R(6, 12), color: 'rgba(255,255,255,.8)' })
+    }
+    if (s.busy) delete doneSince[id]
+    else if (doneSince[id] == null) { // just finished: confetti burst
+      doneSince[id] = t
+      for (let i = 0; i < 40; i++) emit({ x: head.x, y: head.y, vx: R(-160, 160), vy: R(140, 320), life: R(1.2, 2), size: R(3, 5), color: CONFETTI[i % CONFETTI.length], gravity: -420 })
+    }
+    if (held) { if (every(9)) emit({ x: head.x + R(-10, 10), y: head.y + 6, vx: R(-90, 90), vy: R(50, 120), life: .6, color: '#8cccff', gravity: -380 }) } // sweat
+    else if (!s.busy) { if (t - (doneSince[id] ?? t) >= 2.5 && every(3)) emit({ x: head.x + R(-24, 24), y: head.y + R(-10, 20), vy: 12, life: .7, size: 11, color: '#ffd84a', glyph: '✦' }) }
+    else if (!team && s.turn) { if (every(5)) emit({ x: left + R(15, 19) * K, y: 4 + 9 * K, vx: R(-20, 40), vy: R(60, 110), life: .5, size: 2, color: ['#fff', '#7fd3ff', '#7fcf6a'][Math.floor(R(0, 3))], gravity: -260 }) } // keys
+    else if (!team) { if (every(2.5)) emit({ x: left + 11 * K, y: 4 + 13 * K, vy: 16, life: 1.6, color: 'rgba(255,255,255,.7)', wobble: true }) } // coffee steam
+    if (hovered === id && lastHover !== id && !drag?.moved) emit({ x: head.x, y: head.y + 14, vy: 40, life: .6, size: 16, glyph: '!' }) // hover: a little "!"
+  } else for (const s of st.sessions) {
+    if (!s.busy && every(.8)) emit({ x: pos(s.id) + 10, y: 40, vx: 10, vy: 14, life: 2.2, size: 11, glyph: 'z', wobble: true }) // napping
+    if (s.busy && s.id !== hovered && every(2)) emit({ x: pos(s.id) - (right(s.id) ? 14 : -14), y: 8, vy: 8, life: .5, color: 'rgba(255,255,255,.5)' }) // dust from the paws
+  }
+  lastHover = hovered
+  for (const p of particles) { p.age += dt; p.vy += p.gravity * dt; p.x += p.vx * dt; p.y += p.vy * dt }
+  particles = particles.filter((p) => p.age < p.life && p.y > -10)
+}
+function particlesHtml() {
+  let h = particles.map((p) => {
+    const a = 1 - p.age / p.life, x = p.x + (p.wobble ? Math.sin(p.age * 6) * 3 : 0)
+    return p.glyph
+      ? `<b class="abs" style="left:${x}px;bottom:${p.y}px;transform:translate(-50%,50%);font:900 ${p.size}px system-ui;color:${p.color};opacity:${a};z-index:5">${p.glyph}</b>`
+      : `<i class="abs" style="left:${x - p.size / 2}px;bottom:${p.y - p.size / 2}px;width:${p.size}px;height:${p.size}px;background:${p.color};opacity:${a};z-index:5"></i>`
+  }).join('')
+  if (workers()) for (const { s, center } of stations()) { // dropped: stars circle its head for a second
+    const since = t - (dropped[s.id] ?? -9)
+    if (since >= 1.2) continue
+    const x = look(s.id, center).x
+    for (let k = 0; k < 3; k++) {
+      const a = t * 7 + k * 2.1
+      h += `<b class="abs" style="left:${x + Math.cos(a) * 16}px;bottom:${4 + 17 * K - Math.sin(a) * 5}px;transform:translate(-50%,50%);font:900 10px system-ui;color:#ffd84a;opacity:${1 - since / 1.2};z-index:5">★</b>`
+    }
+  }
+  return h
+}
+
 function tick(dt) {
   t += dt
   if (workers()) for (const { s, center } of stations()) {
@@ -155,20 +213,21 @@ function bubbleLine(s, subs) {
   return speaker ? '🤖 ' + short(subs[speaker - 1].desc, 50) : mine // a subagent's task is already its summary
 }
 function station({ s, center }) {
-  const subs = s.subs.slice(0, 5), me = workerOf(s.id), cheer = doneFrame(t), W = stationWidth(1 + subs.length) * K
+  const subs = s.subs.slice(0, 5), me = workerOf(s.id), cheer = celebrate(s.id), W = stationWidth(1 + subs.length) * K
   const px = (name, frame, at, up = 0, flip = false) => spr(name, frame, K, `left:${at * K}px;bottom:${up * K}px;${flip ? 'transform:scaleX(-1)' : ''}`)
   let art = ''
   const held = drag?.moved && drag.id === s.id
   if (!subs.length) { // at the desk
     art += px('chair_side', 0, 0)
-    art += held ? px(me, Math.floor(t * 8) % 2 ? 11 : 12, 1, 2) // picked up: arms up, kicking
-      : s.busy ? px(me, s.turn ? 9 + Math.floor(t * 5) % 2 : 9, 1, 1) : px(me, cheer, -1, cheer === 11 ? 3 : 0) // done: up and cheering
+    art += held ? px(me, Math.floor(t * 8) % 2 ? 15 : 12, 1, 2) // picked up: arms up, kicking
+      : s.busy ? px(me, s.turn ? 9 + Math.floor(t * 5) % 2 : 16, 1, 1) // typing, or a coffee while background work runs
+      : px(me, cheer, -1, cheer === 11 ? 3 : 0) // done: cheers, then waves at you
     art += px('desk_side', s.turn ? Math.floor(t * 2) % 2 : 2, 12)
   } else {            // team meeting: half on each side of the table, the speaker takes turns
     const team = [me, ...subs.map((a) => workerOf(a.id))], left = Math.ceil(team.length / 2), speaker = Math.floor(t / 2.5) % team.length
     team.forEach((name, i) => {
       const at = i < left ? i * 14 : left * 14 + 34 + (i - left) * 14
-      const f = held ? (Math.floor(t * 8 + i) % 2 ? 11 : 12) : i === 0 && !s.busy ? cheer : 6
+      const f = held ? (Math.floor(t * 8 + i) % 2 ? 15 : 12) : i === 0 && !s.busy ? cheer : 6
       art += px(name, f, at, (i === speaker && s.busy && Math.floor(t * 4) % 2 === 0 ? 1 : 0) + (f === 11 ? 3 : 0), i >= left)
     })
     art += px('meeting_table', 0, left * 14 + 2)
@@ -208,7 +267,8 @@ function card(s, anchor) {
 function frame(now) {
   requestAnimationFrame(frame)
   if (now - last < (drag?.moved ? 14 : 30)) return // 60 fps while dragging, ~30 is plenty for pixel art otherwise
-  tick(Math.min(.1, (now - last) / 1000)); last = now
+  const dt = Math.min(.1, (now - last) / 1000); last = now
+  tick(dt); particlesTick(dt)
   // hover: the strip is click-through except over a pet or a station
   const el = mouse && document.elementFromPoint(mouse.x, mouse.y)?.closest('[data-id]')
   hovered = el?.dataset.id ?? null
@@ -218,6 +278,7 @@ function frame(now) {
   if (workers()) html = sts.map(station).join('')
   else html = st.sessions.map(ducklings).join('') + st.sessions.map(pet).join('')
   const h = st.sessions.find((s) => s.id === hovered)
+  html += particlesHtml()
   if (h) html += card(h, workers() ? look(h.id, sts.find((x) => x.s.id === h.id)?.center ?? 0).x : pos(h.id))
   root.innerHTML = html
 }

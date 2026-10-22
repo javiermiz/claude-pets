@@ -361,6 +361,72 @@ final class World: ObservableObject {
     var held: String?                     // the station being dragged right now
     var dropped: [String: Double] = [:]   // when each station last landed, for the squash and the dust
     private var frame = 0
+
+    // Particles: tiny pixels and glyphs that tell each state apart (confetti when a session finishes, sparkles
+    // while it waits for you, sweat while dragged, steam from the coffee, keys flying off the keyboard…)
+    struct Particle {
+        var x, y, vx, vy: CGFloat
+        var age = 0.0, life: Double
+        var size: CGFloat = 3, color: Color = .white, glyph: String? = nil
+        var gravity: CGFloat = 0, wobble = false
+    }
+    private(set) var particles: [Particle] = []
+    private var doneSince: [String: Double] = [:], seen: Set<String> = [], lastHover: String?
+    let height: CGFloat = 480 // the panel's height (see AppDelegate)
+    func emit(_ p: Particle) { if particles.count < 500 { particles.append(p) } }
+    private func every(_ rate: Double) -> Bool { Double.random(in: 0..<1) < rate / 60 } // ~rate per second
+    static let confetti: [Color] = [.pink, .yellow, .mint, .orange, .cyan, .purple, .green]
+
+    // what a worker does when its session is finished: celebrates for a moment, then waves until you come
+    func doneFrame(_ id: String) -> Int {
+        t - (doneSince[id] ?? t) < 2.5 ? (Int(t * 3) % 2 == 0 ? 11 : 0) : (Int(t * 3) % 2 == 0 ? 13 : 14)
+    }
+
+    private func particlesTick(_ dt: Double) {
+        let floor = height - 4
+        if workers {
+            for st in stations() {
+                let id = st.s.id, s = st.s, l = look(id, st.center)
+                let team = store.subagents[id]?.isEmpty == false
+                let w = Station.width(1 + min(5, store.subagents[id]?.count ?? 0)) * K, left = l.x - w / 2
+                let head = CGPoint(x: team ? left + 8 * K : left + (s.busy ? 8 : 6) * K, y: floor - l.lift - 15 * K)
+                if !seen.contains(id) { // a new session arrives in a puff of smoke
+                    seen.insert(id)
+                    for _ in 0..<14 { emit(Particle(x: l.x + .random(in: -40...40), y: floor - .random(in: 10...50), vx: .random(in: -30...30), vy: .random(in: -40...(-10)), life: .random(in: 0.5...0.9), size: .random(in: 6...12), color: .white.opacity(0.8))) }
+                }
+                if s.busy { doneSince[id] = nil }
+                else if doneSince[id] == nil { // just finished: confetti burst
+                    doneSince[id] = t
+                    for _ in 0..<40 { emit(Particle(x: head.x, y: head.y, vx: .random(in: -160...160), vy: .random(in: -320...(-140)), life: .random(in: 1.2...2), size: .random(in: 3...5), color: World.confetti.randomElement()!, gravity: 420)) }
+                }
+                if held == id {
+                    if every(9) { emit(Particle(x: head.x + .random(in: -10...10), y: head.y - 6, vx: .random(in: -90...90), vy: .random(in: -120...(-50)), life: 0.6, size: 3, color: Color(red: 0.55, green: 0.8, blue: 1), gravity: 380)) } // sweat
+                } else if !s.busy {
+                    if t - (doneSince[id] ?? t) >= 2.5, every(3) { emit(Particle(x: head.x + .random(in: -24...24), y: head.y + .random(in: -20...10), vx: 0, vy: -12, life: 0.7, size: 11, color: .yellow, glyph: "✦")) }
+                } else if !team && s.turn {
+                    if every(5) { emit(Particle(x: left + .random(in: 15...19) * K, y: floor - 9 * K, vx: .random(in: -20...40), vy: .random(in: -110...(-60)), life: 0.5, size: 2, color: [Color.white, .cyan, .green].randomElement()!, gravity: 260)) } // keys
+                } else if !team {
+                    if every(2.5) { emit(Particle(x: left + 11 * K, y: floor - 13 * K, vx: 0, vy: -16, life: 1.6, size: 3, color: .white.opacity(0.7), wobble: true)) } // coffee steam
+                }
+                if hovered == id && lastHover != id && held == nil { // hover: a little "!" pops up
+                    emit(Particle(x: head.x, y: head.y - 14, vx: 0, vy: -40, life: 0.6, size: 16, color: .white, glyph: "!"))
+                }
+            }
+        } else {
+            for s in store.sessions {
+                if !s.busy, every(0.8) { emit(Particle(x: pos(s) + 10, y: height - 40, vx: 10, vy: -14, life: 2.2, size: 11, color: .white, glyph: "z", wobble: true)) } // napping
+                if s.busy, s.id != hovered, every(2) { emit(Particle(x: pos(s) - (facingRight(s) ? 14 : -14), y: height - 8, vx: 0, vy: -8, life: 0.5, size: 3, color: .white.opacity(0.5))) } // dust from the paws
+            }
+        }
+        lastHover = hovered
+        for i in particles.indices {
+            particles[i].age += dt
+            particles[i].vy += particles[i].gravity * dt
+            particles[i].x += particles[i].vx * dt
+            particles[i].y += particles[i].vy * dt
+        }
+        particles.removeAll { $0.age >= $0.life || $0.y > height + 10 }
+    }
     private var shown: [String: CGFloat] = [:], lift: [String: CGFloat] = [:], lag: [String: CGFloat] = [:]
 
     // Where a station is drawn: it eases toward its slot (so drags and new arrivals glide), floats up while held,
@@ -445,6 +511,7 @@ final class World: ObservableObject {
                 leader = d.x
             }
         }
+        particlesTick(dt)
         // 60 fps only while a station is held or still gliding/landing; 30 the rest of the time, to spare the battery
         frame += 1
         let gliding = held != nil || lag.values.contains { abs($0) > 0.5 } || dropped.values.contains { t - $0 < 0.6 }
@@ -453,7 +520,7 @@ final class World: ObservableObject {
 }
 
 // Pixel art from pets.px.js, one strip per character. Two styles, picked in the menu bar:
-// pets (5 frames: 0-3 walk, 4 lying down) and workers (13 frames: 6-8 side walk, 11 cheering, 12 held up)
+// pets (5 frames: 0-3 walk, 4 lying down) and workers (17 frames: 6-8 side walk, 9-10 typing, 11 cheering, 12/15 held up, 13-14 waving, 16 coffee)
 func strips(_ dir: String, _ n: Int, prefix: String = "") -> [[CGImage]] {
     let urls = (Bundle.main.urls(forResourcesWithExtension: "png", subdirectory: dir) ?? []).filter { $0.lastPathComponent.hasPrefix(prefix) }
     return urls.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { url in
@@ -464,7 +531,7 @@ func strips(_ dir: String, _ n: Int, prefix: String = "") -> [[CGImage]] {
     }
 }
 let petSprites = strips("pets", 5)
-let workerSprites = strips("workers", 13, prefix: "worker_")
+let workerSprites = strips("workers", 17, prefix: "worker_")
 let office: [String: [CGImage]] = { // desk (3 frames: code, code, off), chair, meeting table — live next to the workers
     var out: [String: [CGImage]] = [:]
     for (name, n) in [("desk_side", 3), ("chair_side", 1), ("meeting_table", 1)] {
@@ -629,13 +696,13 @@ struct Station: View {
         let t = world.t
         let subs = Array((world.store.subagents[s.id] ?? []).prefix(5))
         let me = workerFrames(s.sessionId)
-        let cheer = workers ? doneFrame(t) : 11
+        let cheer = world.doneFrame(s.id)
         ZStack(alignment: .bottomLeading) {
             if subs.isEmpty { // at the desk
                 px(office["chair_side"]?.first, x: 0)
-                if world.held == s.id { px(me[safe: Int(t * 8) % 2 == 0 ? 12 : 11], x: 1, up: 2) } // picked up: arms up, kicking
-                else if s.busy { px(me[safe: s.turn ? 9 + Int(t * 5) % 2 : 9], x: 1, up: 1) }
-                else { px(me[safe: cheer], x: -1, up: cheer == 11 ? 3 : 0) } // done: up and cheering
+                if world.held == s.id { px(me[safe: Int(t * 8) % 2 == 0 ? 12 : 15], x: 1, up: 2) } // picked up: arms up, kicking
+                else if s.busy { px(me[safe: s.turn ? 9 + Int(t * 5) % 2 : 16], x: 1, up: 1) } // typing, or a coffee while background work runs
+                else { px(me[safe: cheer], x: -1, up: cheer == 11 ? 3 : 0) } // done: cheers, then waves at you
                 px(office["desk_side"]?[s.turn ? Int(t * 2) % 2 : 2], x: 12)
             } else {          // team meeting: half on each side of the table, the speaker takes turns
                 let team = [me] + subs.map { workerFrames($0.id) }
@@ -644,7 +711,7 @@ struct Station: View {
                 ForEach(0..<team.count, id: \.self) { i in
                     let x = i < left ? CGFloat(i * 14) : CGFloat(left * 14 + 34 + (i - left) * 14)
                     let talking = i == speaker && s.busy
-                    let f = world.held == s.id ? (Int(t * 8 + Double(i)) % 2 == 0 ? 12 : 11) : i == 0 && !s.busy ? cheer : 6
+                    let f = world.held == s.id ? (Int(t * 8 + Double(i)) % 2 == 0 ? 12 : 15) : i == 0 && !s.busy ? cheer : 6
                     px(team[i][safe: f], x: x, up: (talking && Int(t * 4) % 2 == 0 ? 1 : 0) + (f == 11 ? 3 : 0), flip: i >= left)
                 }
                 px(office["meeting_table"]?.first, x: CGFloat(left * 14 + 2))
@@ -767,6 +834,30 @@ struct ContentView: View {
                         .zIndex(world.hovered == s.id ? 2 : (s.busy ? 0 : 1))
                 }
                 }
+                Canvas { ctx, _ in
+                    for p in world.particles {
+                        let a = 1 - p.age / p.life, x = p.x + (p.wobble ? CGFloat(sin(p.age * 6)) * 3 : 0)
+                        if let g = p.glyph {
+                            ctx.draw(Text(g).font(.system(size: p.size, weight: .black, design: .rounded)).foregroundColor(p.color.opacity(a)), at: CGPoint(x: x, y: p.y))
+                        } else {
+                            ctx.fill(Path(CGRect(x: x - p.size / 2, y: p.y - p.size / 2, width: p.size, height: p.size)), with: .color(p.color.opacity(a)))
+                        }
+                    }
+                    if workers { // dropped: stars circle its head for a second
+                        for st in world.stations() {
+                            let since = world.t - (world.dropped[st.s.id] ?? -9)
+                            guard since < 1.2 else { continue }
+                            let x = world.look(st.s.id, st.center).x, y = geo.size.height - 4 - 17 * K
+                            for k in 0..<3 {
+                                let a = world.t * 7 + Double(k) * 2.1
+                                ctx.draw(Text("★").font(.system(size: 10, weight: .black)).foregroundColor(.yellow.opacity(1 - since / 1.2)),
+                                         at: CGPoint(x: x + CGFloat(cos(a)) * 16, y: y + CGFloat(sin(a)) * 5))
+                            }
+                        }
+                    }
+                }
+                .allowsHitTesting(false)
+                .zIndex(2.5)
                 if let s = store.sessions.first(where: { $0.id == world.hovered }) {
                     // bottom-anchored just above the bubbles and name tags; grows upward with its content
                     VStack(spacing: 0) {
