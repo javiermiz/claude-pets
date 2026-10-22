@@ -65,12 +65,28 @@ function spr(name, frame, scale, style = '') { // one frame of a strip, bottom-l
 // World: busy pets wander along the floor; ducklings follow the one ahead at their own pace
 const x = {}, vx = {}, sub = {}
 const placed = {} // stations the user dragged somewhere: they stay there
+const shown = {}, lift = {}, lag = {}, dropped = {}
 let drag = null
+// Where a station is drawn: it eases toward its slot (so drags and new arrivals glide), floats up while held,
+// swings like a pendulum from the cursor while moving, and squashes when it lands.
+function look(id, slot) {
+  const since = t - (dropped[id] ?? -9), squash = since < .6 ? Math.sin(since * 16) * Math.exp(-since * 7) * .22 : 0
+  const held = drag?.moved && drag.id === id
+  return { x: shown[id] ?? slot, lift: lift[id] ?? 0, tilt: held ? Math.max(-22, Math.min(22, (lag[id] ?? 0) * .4)) : 0,
+    sx: 1 + squash * .6, sy: 1 - squash, since }
+}
 let t = 0, hovered = null, mouse = null, inside = false, last = performance.now(), order = []
 const pos = (id) => x[id] ??= 40 + Math.random() * Math.max(1, innerWidth - 80)
 const right = (id) => (vx[id] ?? -1) > 0
 function tick(dt) {
   t += dt
+  if (workers()) for (const { s, center } of stations()) {
+    const held = drag?.moved && drag.id === s.id, x = shown[s.id] ?? center
+    shown[s.id] = x + (center - x) * Math.min(1, dt * (held ? 20 : 9))
+    lag[s.id] = center - shown[s.id]
+    const up = held ? 18 : hovered === s.id ? 4 : 0 // hover: it perks up; held: it's lifted off the floor
+    lift[s.id] = (lift[s.id] ?? 0) + (up - (lift[s.id] ?? 0)) * Math.min(1, dt * 16)
+  }
   for (const s of st.sessions) {
     if (!s.busy || s.id === hovered || workers()) continue
     let v = vx[s.id] ?? (Math.random() < .5 ? 1 : -1) * (60 + Math.random() * 80)
@@ -142,21 +158,29 @@ function station({ s, center }) {
   const subs = s.subs.slice(0, 5), me = workerOf(s.id), cheer = doneFrame(t), W = stationWidth(1 + subs.length) * K
   const px = (name, frame, at, up = 0, flip = false) => spr(name, frame, K, `left:${at * K}px;bottom:${up * K}px;${flip ? 'transform:scaleX(-1)' : ''}`)
   let art = ''
+  const held = drag?.moved && drag.id === s.id
   if (!subs.length) { // at the desk
     art += px('chair_side', 0, 0)
-    art += s.busy ? px(me, s.turn ? 9 + Math.floor(t * 5) % 2 : 9, 1, 1) : px(me, cheer, -1, cheer === 11 ? 3 : 0) // done: up and cheering
+    art += held ? px(me, Math.floor(t * 8) % 2 ? 6 : 11, 1, 2) // picked up: arms up, kicking
+      : s.busy ? px(me, s.turn ? 9 + Math.floor(t * 5) % 2 : 9, 1, 1) : px(me, cheer, -1, cheer === 11 ? 3 : 0) // done: up and cheering
     art += px('desk_side', s.turn ? Math.floor(t * 2) % 2 : 2, 12)
   } else {            // team meeting: half on each side of the table, the speaker takes turns
     const team = [me, ...subs.map((a) => workerOf(a.id))], left = Math.ceil(team.length / 2), speaker = Math.floor(t / 2.5) % team.length
     team.forEach((name, i) => {
       const at = i < left ? i * 14 : left * 14 + 34 + (i - left) * 14
-      const f = i === 0 && !s.busy ? cheer : 6
+      const f = held ? (Math.floor(t * 8 + i) % 2 ? 6 : 11) : i === 0 && !s.busy ? cheer : 6
       art += px(name, f, at, (i === speaker && s.busy && Math.floor(t * 4) % 2 === 0 ? 1 : 0) + (f === 11 ? 3 : 0), i >= left)
     })
     art += px('meeting_table', 0, left * 14 + 2)
   }
-  const line = bubbleLine(s, subs)
-  return `<div class="abs" data-id="${esc(s.id)}" style="left:${center - W / 2}px;bottom:4px;width:${W}px;height:${22 * K}px;z-index:${hovered === s.id ? 3 : 1}">${art}` +
+  const line = bubbleLine(s, subs), l = look(s.id, center)
+  const shadow = l.lift > 1 ? `<div class="abs" style="left:${l.x - W * (1 - l.lift / 60) / 2}px;bottom:0;width:${W * (1 - l.lift / 60)}px;height:8px;border-radius:50%;background:rgba(0,0,0,${.28 - l.lift * .008})"></div>` : ''
+  const dust = l.since < .35 ? [-1, 1].map((side) => { // landing dust
+    const r = 6 + l.since * 20
+    return `<div class="abs" style="left:${l.x + side * (W / 2 + l.since * 70) - r / 2}px;bottom:${4 + l.since * 14 - r / 2}px;width:${r}px;height:${r}px;border-radius:50%;background:rgba(255,255,255,${.7 * (1 - l.since / .35)})"></div>`
+  }).join('') : ''
+  return shadow + dust + `<div class="abs" data-id="${esc(s.id)}" style="left:${l.x - W / 2}px;bottom:${4 + l.lift}px;width:${W}px;height:${22 * K}px;z-index:${held ? 4 : hovered === s.id ? 3 : 1};` +
+    `transform-origin:50% 100%;transform:translateY(-${22 * K}px) rotate(${l.tilt}deg) translateY(${22 * K}px) scale(${l.sx},${l.sy});cursor:${held ? 'grabbing' : 'grab'}">${art}` +
     `<div class="abs over" style="left:50%;bottom:${22 * K + 4 + bounce(s)}px">${line ? `<div class="bubble">${esc(line)}</div>` : ''}${plate(s)}</div></div>`
 }
 
@@ -183,7 +207,7 @@ function card(s, anchor) {
 
 function frame(now) {
   requestAnimationFrame(frame)
-  if (now - last < 30) return // ~30 fps is plenty for pixel art
+  if (now - last < (drag?.moved ? 14 : 30)) return // 60 fps while dragging, ~30 is plenty for pixel art otherwise
   tick(Math.min(.1, (now - last) / 1000)); last = now
   // hover: the strip is click-through except over a pet or a station
   const el = mouse && document.elementFromPoint(mouse.x, mouse.y)?.closest('[data-id]')
@@ -194,7 +218,7 @@ function frame(now) {
   if (workers()) html = sts.map(station).join('')
   else html = st.sessions.map(ducklings).join('') + st.sessions.map(pet).join('')
   const h = st.sessions.find((s) => s.id === hovered)
-  if (h) html += card(h, workers() ? sts.find((x) => x.s.id === h.id)?.center ?? 0 : pos(h.id))
+  if (h) html += card(h, workers() ? look(h.id, sts.find((x) => x.s.id === h.id)?.center ?? 0).x : pos(h.id))
   root.innerHTML = html
 }
 requestAnimationFrame(frame)
@@ -210,7 +234,10 @@ addEventListener('mousemove', (e) => {
   drag.moved = true
   placed[drag.id] = Math.min(Math.max(drag.from + e.clientX - drag.x, 60), innerWidth - 60)
 })
-addEventListener('mouseup', () => setTimeout(() => (drag = null)))
+addEventListener('mouseup', () => {
+  if (drag?.moved) dropped[drag.id] = t
+  setTimeout(() => (drag = null))
+})
 addEventListener('click', () => hovered && !drag?.moved && pets.open(hovered))
 addEventListener('contextmenu', (e) => { e.preventDefault(); pets.menu() })
 </script>

@@ -336,7 +336,7 @@ extension Store {
 }
 var demoNotified = false
 
-// 2. World — a 30 fps tick moves busy pets along the floor; idle ones nap in place
+// 2. World — a 60 fps tick moves busy pets along the floor; idle ones nap in place
 final class World: ObservableObject {
     @Published var hovered: String?
     let store = Store()
@@ -347,7 +347,7 @@ final class World: ObservableObject {
     private(set) var sub: [String: (x: CGFloat, right: Bool, moving: Bool)] = [:] // subagent ducklings
 
     init() {
-        Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in self?.tick() }
+        Timer.scheduledTimer(withTimeInterval: 1 / 60, repeats: true) { [weak self] _ in self?.tick() }
     }
 
     // workers: stations side by side from the right edge, where windows keep the least (sidebars and
@@ -355,6 +355,19 @@ final class World: ObservableObject {
     private var stationOrder: [String] = []
     var placed: [String: CGFloat] = [:]   // stations the user dragged somewhere: they stay there
     var dragFrom: CGFloat?
+    var held: String?                     // the station being dragged right now
+    var dropped: [String: Double] = [:]   // when each station last landed, for the squash and the dust
+    private var frame = 0
+    private var shown: [String: CGFloat] = [:], lift: [String: CGFloat] = [:], lag: [String: CGFloat] = [:]
+
+    // Where a station is drawn: it eases toward its slot (so drags and new arrivals glide), floats up while held,
+    // swings like a pendulum from the cursor while moving, and squashes when it lands.
+    func look(_ id: String, _ slot: CGFloat) -> (x: CGFloat, lift: CGFloat, tilt: Double, sx: CGFloat, sy: CGFloat) {
+        let since = t - (dropped[id] ?? -9)
+        let squash = since < 0.6 ? CGFloat(sin(since * 16) * exp(-since * 7)) * 0.22 : 0
+        let tilt = held == id ? Double(max(-22, min(22, (lag[id] ?? 0) * 0.4))) : 0
+        return (shown[id] ?? slot, lift[id] ?? 0, tilt, 1 + squash * 0.6, 1 - squash)
+    }
     func stations() -> [(s: Session, center: CGFloat)] {
         let ids = store.sessions.map(\.id)
         stationOrder = stationOrder.filter { ids.contains($0) } + ids.filter { !stationOrder.contains($0) }
@@ -366,7 +379,7 @@ final class World: ObservableObject {
         }
         return out
     }
-    func anchor(_ s: Session) -> CGFloat { workers ? stations().first { $0.s.id == s.id }?.center ?? pos(s) : pos(s) }
+    func anchor(_ s: Session) -> CGFloat { workers ? stations().first { $0.s.id == s.id }.map { look(s.id, $0.center).x } ?? pos(s) : pos(s) }
 
     func pos(_ s: Session) -> CGFloat {
         if let p = x[s.id] { return p }
@@ -379,11 +392,21 @@ final class World: ObservableObject {
 
     func tick() {
         if demo { hovered = demoHover }
-        let dt = 1.0 / 30
+        let dt = 1.0 / 60
         t += dt
+        if workers {
+            for st in stations() {
+                let id = st.s.id, x = shown[id] ?? st.center
+                let nx = x + (st.center - x) * min(1, dt * (held == id ? 20 : 9))
+                shown[id] = nx
+                lag[id] = st.center - nx
+                let up: CGFloat = held == id ? 18 : hovered == id ? 4 : 0 // hover: it perks up; held: it's lifted off the floor
+                lift[id] = (lift[id] ?? 0) + (up - (lift[id] ?? 0)) * min(1, dt * 16)
+            }
+        }
         for s in store.sessions where s.busy && s.id != hovered {
             var v = vx[s.id] ?? (Bool.random() ? 1 : -1) * .random(in: 60...140)
-            if Double.random(in: 0..<1) < 0.004 { v = -v } // wander
+            if Double.random(in: 0..<1) < 0.002 { v = -v } // wander
             var p = pos(s) + v * dt
             if p < 30 || p > width - 30 { v = -v; p = min(max(p, 30), width - 30) }
             x[s.id] = p
@@ -406,7 +429,10 @@ final class World: ObservableObject {
                 leader = d.x
             }
         }
-        objectWillChange.send()
+        // 60 fps only while a station is held or still gliding/landing; 30 the rest of the time, to spare the battery
+        frame += 1
+        let gliding = held != nil || lag.values.contains { abs($0) > 0.5 } || dropped.values.contains { t - $0 < 0.6 }
+        if gliding || frame % 2 == 0 { objectWillChange.send() }
     }
 }
 
@@ -591,7 +617,8 @@ struct Station: View {
         ZStack(alignment: .bottomLeading) {
             if subs.isEmpty { // at the desk
                 px(office["chair_side"]?.first, x: 0)
-                if s.busy { px(me[safe: s.turn ? 9 + Int(t * 5) % 2 : 9], x: 1, up: 1) }
+                if world.held == s.id { px(me[safe: Int(t * 8) % 2 == 0 ? 11 : 6], x: 1, up: 2) } // picked up: arms up, kicking
+                else if s.busy { px(me[safe: s.turn ? 9 + Int(t * 5) % 2 : 9], x: 1, up: 1) }
                 else { px(me[safe: cheer], x: -1, up: cheer == 11 ? 3 : 0) } // done: up and cheering
                 px(office["desk_side"]?[s.turn ? Int(t * 2) % 2 : 2], x: 12)
             } else {          // team meeting: half on each side of the table, the speaker takes turns
@@ -601,7 +628,7 @@ struct Station: View {
                 ForEach(0..<team.count, id: \.self) { i in
                     let x = i < left ? CGFloat(i * 14) : CGFloat(left * 14 + 34 + (i - left) * 14)
                     let talking = i == speaker && s.busy
-                    let f = i == 0 && !s.busy ? cheer : 6
+                    let f = world.held == s.id ? (Int(t * 8 + Double(i)) % 2 == 0 ? 11 : 6) : i == 0 && !s.busy ? cheer : 6
                     px(team[i][safe: f], x: x, up: (talking && Int(t * 4) % 2 == 0 ? 1 : 0) + (f == 11 ? 3 : 0), flip: i >= left)
                 }
                 px(office["meeting_table"]?.first, x: CGFloat(left * 14 + 2))
@@ -685,14 +712,35 @@ struct ContentView: View {
             ZStack(alignment: .topLeading) {
                 if workers {
                     ForEach(world.stations(), id: \.s.id) { st in
+                        let l = world.look(st.s.id, st.center), since = world.t - (world.dropped[st.s.id] ?? -9)
+                        let w = Station.width(1 + min(5, store.subagents[st.s.id]?.count ?? 0)) * K
+                        Ellipse().fill(.black.opacity(0.28 - Double(l.lift) * 0.008)) // shadow: shrinks as it rises
+                            .frame(width: w * (1 - l.lift / 60), height: 8)
+                            .position(x: l.x, y: geo.size.height - 4)
+                            .opacity(l.lift > 1 ? 1 : 0)
+                        if since < 0.35 { // landing dust
+                            ForEach([-1.0, 1.0], id: \.self) { side in
+                                Circle().fill(.white.opacity(0.7 * (1 - since / 0.35)))
+                                    .frame(width: 6 + since * 20, height: 6 + since * 20)
+                                    .position(x: l.x + CGFloat(side) * (w / 2 + since * 70), y: geo.size.height - 8 - since * 14)
+                            }
+                        }
                         Station(s: st.s, world: world)
-                            .gesture(DragGesture(minimumDistance: 4).onChanged { v in // drag a workstation anywhere along the floor
+                            .scaleEffect(x: l.sx, y: l.sy, anchor: .bottom)
+                            .rotationEffect(.degrees(l.tilt), anchor: .top) // hangs from the cursor
+                            .offset(y: -l.lift)
+                            .gesture(DragGesture(minimumDistance: 4, coordinateSpace: .global).onChanged { v in // drag it anywhere along the floor
                                 let from = world.dragFrom ?? st.center
                                 world.dragFrom = from
+                                world.held = st.s.id
                                 world.placed[st.s.id] = min(max(from + v.translation.width, 60), geo.size.width - 60)
-                            }.onEnded { _ in world.dragFrom = nil })
-                            .position(x: st.center, y: geo.size.height - 4 - 11 * K)
-                            .zIndex(world.hovered == st.s.id ? 2 : 1)
+                            }.onEnded { _ in
+                                world.dragFrom = nil
+                                world.held = nil
+                                world.dropped[st.s.id] = world.t
+                            })
+                            .position(x: l.x, y: geo.size.height - 4 - 11 * K)
+                            .zIndex(world.held == st.s.id ? 3 : world.hovered == st.s.id ? 2 : 1)
                     }
                 } else {
                 ForEach(store.sessions) { s in // subagents trail behind their parent, small
