@@ -354,7 +354,10 @@ final class World: ObservableObject {
     // the left half of the screen stay clear), in the order sessions first appeared
     private var stationOrder: [String] = []
     var placed: [String: CGFloat] = [:]   // stations the user dragged somewhere: they stay there
-    var dragFrom: CGFloat?
+    // dragging, read straight from the mouse each frame: press on a station and move 4 pt to pick it up
+    private var press: (id: String, mouseX: CGFloat, from: CGFloat)?
+    private var wasDown = false
+    var lastDrop: Double = -9             // a release that ends a drag isn't a click
     var held: String?                     // the station being dragged right now
     var dropped: [String: Double] = [:]   // when each station last landed, for the squash and the dust
     private var frame = 0
@@ -395,6 +398,19 @@ final class World: ObservableObject {
         let dt = 1.0 / 60
         t += dt
         if workers {
+            let down = NSEvent.pressedMouseButtons & 1 != 0, mx = NSEvent.mouseLocation.x - (NSScreen.main?.visibleFrame.minX ?? 0)
+            if down && !wasDown, let h = hovered, let st = stations().first(where: { $0.s.id == h }) {
+                press = (h, mx, shown[h] ?? st.center)
+            }
+            if down, let p = press {
+                if held == nil && abs(mx - p.mouseX) > 4 { held = p.id }
+                if held == p.id { placed[p.id] = min(max(p.from + mx - p.mouseX, 60), width - 60) }
+            }
+            if !down {
+                if let h = held { dropped[h] = t; lastDrop = t }
+                held = nil; press = nil
+            }
+            wasDown = down
             for st in stations() {
                 let id = st.s.id, x = shown[id] ?? st.center
                 let nx = x + (st.center - x) * min(1, dt * (held == id ? 20 : 9))
@@ -645,7 +661,7 @@ struct Station: View {
             .alignmentGuide(.top) { $0[.bottom] + 4 + (s.busy ? 0 : abs(sin(t * 4)) * 5) } // sits on top of the station
         }
         .contentShape(Rectangle())
-        .onTapGesture { world.store.open(s) }
+        .onTapGesture { if world.t - world.lastDrop > 0.3 { world.store.open(s) } }
         .onHover { inside in
             if inside { world.hovered = s.id } else if world.hovered == s.id { world.hovered = nil }
         }
@@ -729,16 +745,6 @@ struct ContentView: View {
                             .scaleEffect(x: l.sx, y: l.sy, anchor: .bottom)
                             .rotationEffect(.degrees(l.tilt), anchor: .top) // hangs from the cursor
                             .offset(y: -l.lift)
-                            .gesture(DragGesture(minimumDistance: 4, coordinateSpace: .global).onChanged { v in // drag it anywhere along the floor
-                                let from = world.dragFrom ?? st.center
-                                world.dragFrom = from
-                                world.held = st.s.id
-                                world.placed[st.s.id] = min(max(from + v.translation.width, 60), geo.size.width - 60)
-                            }.onEnded { _ in
-                                world.dragFrom = nil
-                                world.held = nil
-                                world.dropped[st.s.id] = world.t
-                            })
                             .position(x: l.x, y: geo.size.height - 4 - 11 * K)
                             .zIndex(world.held == st.s.id ? 3 : world.hovered == st.s.id ? 2 : 1)
                     }
