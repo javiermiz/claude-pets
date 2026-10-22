@@ -2,9 +2,7 @@
 
 **English** · [Español](README.es.md) · [Português](README.pt.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [简体中文](README.zh.md) · [한국어](README.ko.md)
 
-Your [Claude Code](https://claude.com/claude-code) sessions, as 8-bit pets walking along the bottom of your Mac screen.
-
-[![Claude Pets promo](docs/promo/poster-en.png)](https://github.com/javiermiz/claude-pets/releases/download/v1.2.0/claude-pets-promo-en.mp4)
+Your [Claude Code](https://claude.com/claude-code) sessions, as 8-bit pets walking along the bottom of your screen, on macOS and Windows.
 
 ![Claude Pets](docs/zoo.png)
 
@@ -46,6 +44,24 @@ git clone https://github.com/javiermiz/claude-pets && cd claude-pets && ./build.
 The 🐾 in the menu bar has **Open at login** and **Quit**. Right-clicking a pet also quits.
 
 To update, run the install command again. To uninstall, quit the app and delete `~/Applications/ClaudePets.app`.
+
+## Windows
+
+Requires Windows 10 or 11 (x64). In PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/javiermiz/claude-pets/main/install.ps1 | iex
+```
+
+This downloads the latest installer from [Releases](https://github.com/javiermiz/claude-pets/releases/latest), installs Claude Pets for your user (no admin needed) and starts it. You can also download `ClaudePets-Setup.exe` from Releases and double-click it, or take the portable `ClaudePets-windows-x64.zip`, unzip it anywhere and run `ClaudePets.exe`. They aren't signed, so SmartScreen may warn you the first time: **More info → Run anyway**.
+
+The 🐾 lives in the notification area (system tray): right-click it for the same menu as on the Mac. AI summaries use the `claude` CLI installed natively (`%USERPROFILE%\.local\bin\claude.exe`) or with npm.
+
+The Windows version is built with Electron (the `windows/` folder), so it's bigger (~80 MB installer). It doesn't count background shells yet: a session that is only waiting on a background shell shows as finished. To uninstall: **Settings → Apps → Claude Pets**. To build it yourself (on any OS, with Node.js):
+
+```sh
+cd windows && npm install && npm run dist
+```
 
 ## How it works
 

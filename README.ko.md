@@ -2,9 +2,7 @@
 
 [English](README.md) · [Español](README.es.md) · [Português](README.pt.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [简体中文](README.zh.md) · **한국어**
 
-[Claude Code](https://claude.com/claude-code) 세션이 8비트 펫이 되어 Mac 화면 아래쪽을 돌아다닙니다.
-
-[![Claude Pets promo](docs/promo/poster-en.png)](https://github.com/javiermiz/claude-pets/releases/download/v1.2.0/claude-pets-promo-en.mp4)
+[Claude Code](https://claude.com/claude-code) 세션이 8비트 펫이 되어 화면 아래쪽을 돌아다닙니다. macOS와 Windows를 지원해요.
 
 ![Claude Pets](docs/zoo.png)
 
@@ -46,6 +44,24 @@ git clone https://github.com/javiermiz/claude-pets && cd claude-pets && ./build.
 메뉴 막대의 🐾에서 **로그인 시 열기**와 **종료**를 선택할 수 있습니다. 펫을 우클릭해도 종료됩니다.
 
 업데이트하려면 설치 명령을 다시 실행하세요. 제거하려면 앱을 종료하고 `~/Applications/ClaudePets.app`을 삭제하세요.
+
+## Windows
+
+Windows 10 또는 11(x64)이 필요합니다. PowerShell에서:
+
+```powershell
+irm https://raw.githubusercontent.com/javiermiz/claude-pets/main/install.ps1 | iex
+```
+
+[Releases](https://github.com/javiermiz/claude-pets/releases/latest)에서 최신 설치 프로그램을 내려받아 현재 사용자에게 Claude Pets를 설치(관리자 권한 불필요)하고 실행합니다. Releases에서 `ClaudePets-Setup.exe`를 받아 더블클릭하거나, 포터블 버전 `ClaudePets-windows-x64.zip`을 원하는 곳에 풀고 `ClaudePets.exe`를 실행해도 됩니다. 서명되지 않았기 때문에 처음에는 SmartScreen이 경고할 수 있어요: **추가 정보 → 실행**.
+
+🐾는 알림 영역(시스템 트레이)에 있어요. 마우스 오른쪽 버튼을 누르면 Mac과 같은 메뉴가 열립니다. AI 요약은 네이티브(`%USERPROFILE%\.local\bin\claude.exe`) 또는 npm으로 설치한 `claude` CLI를 사용합니다.
+
+Windows 버전은 Electron으로 만들어져(`windows/` 폴더) 용량이 더 큽니다(설치 프로그램 약 80MB). 아직 백그라운드 셸은 세지 않아요: 백그라운드 셸만 기다리는 세션은 완료로 표시됩니다. 제거: **설정 → 앱 → Claude Pets**. 직접 빌드하려면(어떤 OS든 Node.js만 있으면):
+
+```sh
+cd windows && npm install && npm run dist
+```
 
 ## 작동 방식
 

@@ -2,9 +2,7 @@
 
 [English](README.md) · [Español](README.es.md) · [Português](README.pt.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · **简体中文** · [한국어](README.ko.md)
 
-把你的 [Claude Code](https://claude.com/claude-code) 会话变成 8 位像素宠物，在 Mac 屏幕底部走来走去。
-
-[![Claude Pets promo](docs/promo/poster-en.png)](https://github.com/javiermiz/claude-pets/releases/download/v1.2.0/claude-pets-promo-en.mp4)
+把你的 [Claude Code](https://claude.com/claude-code) 会话变成 8 位像素宠物，在屏幕底部走来走去，支持 macOS 和 Windows。
 
 ![Claude Pets](docs/zoo.png)
 
@@ -46,6 +44,24 @@ git clone https://github.com/javiermiz/claude-pets && cd claude-pets && ./build.
 菜单栏中的 🐾 提供**登录时打开**和**退出**。右键点击宠物也可以退出。
 
 要更新，再运行一次安装命令即可。要卸载，退出应用并删除 `~/Applications/ClaudePets.app`。
+
+## Windows
+
+需要 Windows 10 或 11（x64）。在 PowerShell 中运行：
+
+```powershell
+irm https://raw.githubusercontent.com/javiermiz/claude-pets/main/install.ps1 | iex
+```
+
+它会从 [Releases](https://github.com/javiermiz/claude-pets/releases/latest) 下载最新的安装程序，为当前用户安装 Claude Pets（无需管理员权限）并启动它。你也可以从 Releases 下载 `ClaudePets-Setup.exe` 双击安装，或者下载便携版 `ClaudePets-windows-x64.zip`，解压到任意位置后运行 `ClaudePets.exe`。它们没有签名，所以首次运行时 SmartScreen 可能会提示：**更多信息 → 仍要运行**。
+
+🐾 位于通知区域（系统托盘）：右键点击即可打开和 Mac 上相同的菜单。AI 摘要使用原生安装（`%USERPROFILE%\.local\bin\claude.exe`）或通过 npm 安装的 `claude` CLI。
+
+Windows 版用 Electron 构建（`windows/` 文件夹），所以体积更大（安装程序约 80 MB）。它暂时还不统计后台 shell：只在等待后台 shell 的会话会显示为已完成。卸载：**设置 → 应用 → Claude Pets**。自己构建（任何系统，需要 Node.js）：
+
+```sh
+cd windows && npm install && npm run dist
+```
 
 ## 工作原理
 

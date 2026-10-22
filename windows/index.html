@@ -1,0 +1,203 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; user-select: none; cursor: default;
+    font: 600 10px "Segoe UI", system-ui, sans-serif; }
+  .abs { position: absolute; }
+  .spr { position: absolute; display: block; image-rendering: pixelated; background-repeat: no-repeat; }
+  .plate { white-space: nowrap; color: #fff; background: rgba(0, 0, 0, .6); border-radius: 99px; padding: 3px 7px; display: inline-flex; gap: 4px; align-items: center; }
+  .plate.done { background: #34c759; }
+  .plate em { font-style: normal; color: #ffd60a; }
+  .plate b { display: inline-block; font-weight: 600; }
+  .bubble { color: #000; background: #fff; border: 1.5px solid #000; border-radius: 6px; padding: 4px 7px; max-width: 210px; width: max-content;
+    font-weight: 500; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .over { display: flex; flex-direction: column; align-items: center; gap: 4px; transform: translateX(-50%); }
+  .card { width: 276px; padding: 12px; border-radius: 14px; background: rgba(32, 32, 38, .96); color: #eee; font-weight: 400; font-size: 11px;
+    display: flex; flex-direction: column; gap: 4px; box-shadow: 0 6px 24px rgba(0, 0, 0, .35); }
+  .card h1 { font-size: 13px; margin: 0; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .card h2 { font-size: 11px; margin: 4px 0 0; }
+  .card .k { position: relative; width: 36px; height: 28px; flex: none; }
+  .card .on { color: #30d158; } .card .dim { color: #999; } .card .hint { color: #777; font-size: 10px; margin-top: 2px; }
+  .card .label { font-size: 12px; font-weight: 700; }
+  .clamp { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; -webkit-line-clamp: 2; }
+  .one { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+</style>
+<div id="root"></div>
+<script>
+// The bottom strip: pets walk the floor (subagents trail behind as ducklings), or workers sit at their desks and
+// meet around a table. Finished sessions wait for a click. Same rules and sprites as the macOS app.
+const K = 3 // screen pixels per art pixel
+const root = document.getElementById('root')
+let st = { sessions: [], style: 'pets', strings: {}, lang: 'en', sprites: { pets: [], workers: [] } }
+const img = {} // name -> { url, w, h, n }
+const tr = (k, ...a) => (st.strings[k] || k).replace(/%[@d]/g, () => a.shift())
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const short = (t, n = 70) => t.length <= n ? t : (t.slice(0, n).replace(/ \S*$/, '') || t.slice(0, n)) + '…'
+
+pets.onState((s) => {
+  st = s
+  for (const [dir, names] of Object.entries(s.sprites)) for (const name of names) {
+    if (img[name]) continue
+    const i = new Image(), n = dir === 'pets' ? 5 : name.startsWith('worker_') ? 12 : name === 'desk_side' ? 3 : 1
+    i.onload = () => (img[name] = { url: i.src, w: i.width / n, h: i.height, n })
+    i.src = `assets/${dir}/${name}.png`
+  }
+})
+
+// which sprite a session gets: same hash as the macOS app, so a session looks the same on both
+const seed = (key) => { let h = 0; for (const b of new TextEncoder().encode(key)) h = (Math.imul(h, 31) + b) >>> 0; return h }
+const workers = () => st.style === 'workers' && st.sprites.workers.some((n) => n.startsWith('worker_'))
+const pick = (list, key) => list[(seed(key) >>> 13) % list.length]
+const petOf = (key) => workers() ? workerOf(key) : pick(st.sprites.pets, key)
+const workerOf = (key) => pick(st.sprites.workers.filter((n) => n.startsWith('worker_')), key)
+const walkFrame = (step) => workers() ? [6, 7, 6, 8][step % 4] : step % 4
+const standFrame = () => workers() ? 6 : 1
+const doneFrame = (t) => workers() ? (Math.floor(t * 3) % 2 ? 0 : 11) : 4 // workers jump for joy, pets lie down
+function spr(name, frame, scale, style = '') { // one frame of a strip, bottom-left at its position
+  const s = img[name]
+  if (!s) return ''
+  const f = Math.min(Math.max(frame, 0), s.n - 1)
+  return `<i class="spr" style="width:${s.w * scale}px;height:${s.h * scale}px;background-image:url(${s.url});` +
+    `background-size:${s.w * s.n * scale}px ${s.h * scale}px;background-position:-${f * s.w * scale}px 0;${style}"></i>`
+}
+
+// World: busy pets wander along the floor; ducklings follow the one ahead at their own pace
+const x = {}, vx = {}, sub = {}
+let t = 0, hovered = null, mouse = null, inside = false, last = performance.now(), order = []
+const pos = (id) => x[id] ??= 40 + Math.random() * Math.max(1, innerWidth - 80)
+const right = (id) => (vx[id] ?? -1) > 0
+function tick(dt) {
+  t += dt
+  for (const s of st.sessions) {
+    if (!s.busy || s.id === hovered || workers()) continue
+    let v = vx[s.id] ?? (Math.random() < .5 ? 1 : -1) * (60 + Math.random() * 80)
+    if (Math.random() < .12 * dt) v = -v // wander
+    let p = pos(s.id) + v * dt
+    if (p < 30 || p > innerWidth - 30) { v = -v; p = Math.min(Math.max(p, 30), innerWidth - 30) }
+    x[s.id] = p; vx[s.id] = v
+  }
+  for (const s of st.sessions) {
+    let leader = pos(s.id)
+    s.subs.forEach((a, k) => {
+      const key = s.id + a.id, d = sub[key] ??= { x: leader, right: right(s.id), moving: false }
+      const gap = k ? 34 : 44, dist = leader - d.x
+      d.moving = Math.abs(dist) > gap + 1
+      if (d.moving) { d.x += Math.sign(dist) * Math.min(Math.abs(dist) - gap, 180 * dt); d.right = dist > 0 }
+      leader = d.x
+    })
+  }
+}
+
+function plate(s) {
+  const n = s.subs.length, name = s.name || s.project
+  const icon = !s.busy ? '✔' : s.turn ? '⚙' : '⏳'
+  return `<span class="plate ${s.busy ? '' : 'done'}"><b style="transform:rotate(${s.turn ? t * 120 : 0}deg)">${icon}</b>` +
+    (s.parent ? '↳ ' : '') + esc(name.length > 24 ? name.slice(0, 23) + '…' : name) +
+    (n ? ` <em>· ${n} ${workers() ? '👥' : '🐾'}</em>` : '') + '</span>'
+}
+const bounce = (s) => s.busy ? 0 : Math.abs(Math.sin(t * 4)) * 5 // finished: bounce for attention
+
+function pet(s) {
+  const name = petOf(s.id), sp = img[name]
+  if (!sp) return ''
+  const hov = hovered === s.id
+  const f = !s.busy ? doneFrame(t) : hov ? standFrame() : walkFrame(Math.floor(t * 8) + seed(s.id) % 4)
+  const w = sp.w * K, h = sp.h * K
+  return `<div class="abs" data-id="${esc(s.id)}" style="left:${pos(s.id) - w / 2}px;bottom:6px;width:${w}px;height:${h}px;z-index:${hov ? 3 : s.busy ? 1 : 2}">` +
+    spr(name, f, K, `left:0;bottom:${f === 11 ? 6 : 0}px;transform-origin:bottom;transform:scale(${hov ? 1.2 : 1}) scaleX(${right(s.id) ? 1 : -1})`) +
+    `<div class="abs over" style="left:50%;bottom:${h + 6 + bounce(s)}px">${plate(s)}</div></div>`
+}
+function ducklings(s) {
+  return s.subs.map((a, k) => {
+    const name = petOf(a.id), sp = img[name], d = sub[s.id + a.id]
+    if (!sp || !d) return ''
+    return spr(name, d.moving ? walkFrame(Math.floor(t * 10) + k) : standFrame(), 2,
+      `left:${d.x - sp.w}px;bottom:5px;transform:scaleX(${d.right ? 1 : -1})`)
+  }).join('')
+}
+
+// Workers: nobody walks. A session works at its desk; with subagents the team meets around a table.
+const stationWidth = (team) => team <= 1 ? 36 : Math.floor((team + 1) / 2) * 14 + 34 + Math.floor(team / 2) * 14
+function stations() { // side by side from the left, in the order sessions first appeared
+  const ids = st.sessions.map((s) => s.id)
+  order = order.filter((id) => ids.includes(id)).concat(ids.filter((id) => !order.includes(id)))
+  let at = 40
+  return order.map((id) => {
+    const s = st.sessions.find((x) => x.id === id), w = Math.max(stationWidth(1 + Math.min(5, s.subs.length)) * K, 200)
+    const c = at + w / 2; at += w + 30 // ponytail: no wrapping; past the screen edge they just run off
+    return { s, center: c }
+  })
+}
+function bubbleLine(s, subs) {
+  if (!s.busy) return s.label ? '💬 ' + s.label : s.said && short(s.said)
+  const mine = s.label || (s.doing && short(s.doing))
+  if (!subs.length) return mine
+  const speaker = Math.floor(t / 2.5) % (subs.length + 1)
+  return speaker ? '🤖 ' + short(subs[speaker - 1].desc, 50) : mine // a subagent's task is already its summary
+}
+function station({ s, center }) {
+  const subs = s.subs.slice(0, 5), me = workerOf(s.id), cheer = doneFrame(t), W = stationWidth(1 + subs.length) * K
+  const px = (name, frame, at, up = 0, flip = false) => spr(name, frame, K, `left:${at * K}px;bottom:${up * K}px;${flip ? 'transform:scaleX(-1)' : ''}`)
+  let art = ''
+  if (!subs.length) { // at the desk
+    art += px('chair_side', 0, 0)
+    art += s.busy ? px(me, s.turn ? 9 + Math.floor(t * 5) % 2 : 9, 1, 1) : px(me, cheer, -1, cheer === 11 ? 3 : 0) // done: up and cheering
+    art += px('desk_side', s.turn ? Math.floor(t * 2) % 2 : 2, 12)
+  } else {            // team meeting: half on each side of the table, the speaker takes turns
+    const team = [me, ...subs.map((a) => workerOf(a.id))], left = Math.ceil(team.length / 2), speaker = Math.floor(t / 2.5) % team.length
+    team.forEach((name, i) => {
+      const at = i < left ? i * 14 : left * 14 + 34 + (i - left) * 14
+      const f = i === 0 && !s.busy ? cheer : 6
+      art += px(name, f, at, (i === speaker && s.busy && Math.floor(t * 4) % 2 === 0 ? 1 : 0) + (f === 11 ? 3 : 0), i >= left)
+    })
+    art += px('meeting_table', 0, left * 14 + 2)
+  }
+  const line = bubbleLine(s, subs)
+  return `<div class="abs" data-id="${esc(s.id)}" style="left:${center - W / 2}px;bottom:4px;width:${W}px;height:${22 * K}px;z-index:${hovered === s.id ? 3 : 1}">${art}` +
+    `<div class="abs over" style="left:50%;bottom:${22 * K + 4 + bounce(s)}px">${line ? `<div class="bubble">${esc(line)}</div>` : ''}${plate(s)}</div></div>`
+}
+
+const ago = (ms) => { // in the app's language
+  const sec = (ms - Date.now()) / 1000, f = new Intl.RelativeTimeFormat(st.lang, { numeric: 'auto' })
+  for (const [u, n] of [['day', 86400], ['hour', 3600], ['minute', 60]]) if (Math.abs(sec) >= n) return f.format(Math.round(sec / n), u)
+  return f.format(Math.round(sec), 'second')
+}
+function card(s, anchor) {
+  const sp = img[petOf(s.id)]
+  const status = s.turn ? tr('Working · %@', ago(s.since)) : s.busy ? tr('Waiting on %d in background', s.waiting) : tr('Finished %@', ago(s.since))
+  let h = `<h1><span class="k">${sp ? spr(petOf(s.id), 0, Math.min(36 / sp.w, 28 / sp.h), 'left:0;bottom:0') : ''}</span><span class="clamp">${esc(s.name || tr('Untitled'))}</span></h1>` +
+    `<div>📁 ${esc(s.project)}</div><div class="${s.busy ? 'on' : 'dim'}">${s.turn ? '⚡' : s.busy ? '⏳' : '✔'} ${esc(status)}</div>`
+  if (s.parent) h += `<div>↳ ${esc(tr('Started by %@', s.parent))}</div>`
+  if (s.kids.length) h += `<h2>${esc(tr('Sub-sessions'))}</h2>` + s.kids.map((k) => `<div class="one ${k.busy ? '' : 'dim'}">${k.busy ? '⚙' : '💤'} ${esc(k.name)}</div>`).join('')
+  if (s.subs.length) h += `<h2>${esc(tr('Subagents working'))}</h2>` + s.subs.map((a) => `<div class="one">🐾 ${esc(a.doing ? `${a.desc} — ${a.doing}` : a.desc)}</div>`).join('')
+  if (s.label) h += `<div class="label clamp">${esc(s.label)}</div>`
+  if (s.busy && s.doing) h += `<div class="clamp">${esc(s.doing)}</div>`
+  if (s.said) h += `<div class="dim clamp" style="-webkit-line-clamp:4">${esc(s.said)}</div>`
+  h += `<div class="hint">${esc(s.busy ? tr('Click to open') : tr('Finished · click to see it'))}</div>`
+  const left = Math.min(Math.max(anchor, 160), innerWidth - 160) - 150
+  return `<div class="abs card" style="left:${left}px;bottom:${workers() ? 150 : 110}px;z-index:9;pointer-events:none">${h}</div>`
+}
+
+function frame(now) {
+  requestAnimationFrame(frame)
+  if (now - last < 30) return // ~30 fps is plenty for pixel art
+  tick(Math.min(.1, (now - last) / 1000)); last = now
+  // hover: the strip is click-through except over a pet or a station
+  const el = mouse && document.elementFromPoint(mouse.x, mouse.y)?.closest('[data-id]')
+  hovered = el?.dataset.id ?? null
+  if (!!el !== inside) pets.mouse(inside = !!el)
+  let html = ''
+  const sts = workers() ? stations() : []
+  if (workers()) html = sts.map(station).join('')
+  else html = st.sessions.map(ducklings).join('') + st.sessions.map(pet).join('')
+  const h = st.sessions.find((s) => s.id === hovered)
+  if (h) html += card(h, workers() ? sts.find((x) => x.s.id === h.id)?.center ?? 0 : pos(h.id))
+  root.innerHTML = html
+}
+requestAnimationFrame(frame)
+addEventListener('mousemove', (e) => (mouse = { x: e.clientX, y: e.clientY }))
+addEventListener('mouseleave', () => (mouse = null))
+addEventListener('click', () => hovered && pets.open(hovered))
+addEventListener('contextmenu', (e) => { e.preventDefault(); pets.menu() })
+</script>

@@ -2,9 +2,7 @@
 
 [English](README.md) · [Español](README.es.md) · [Português](README.pt.md) · **Français** · [Deutsch](README.de.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [简体中文](README.zh.md) · [한국어](README.ko.md)
 
-Vos sessions [Claude Code](https://claude.com/claude-code) sous forme d'animaux 8-bit qui se promènent en bas de l'écran de votre Mac.
-
-[![Claude Pets promo](docs/promo/poster-en.png)](https://github.com/javiermiz/claude-pets/releases/download/v1.2.0/claude-pets-promo-en.mp4)
+Vos sessions [Claude Code](https://claude.com/claude-code) sous forme d'animaux 8-bit qui se promènent en bas de votre écran, sur macOS et Windows.
 
 ![Claude Pets](docs/zoo.png)
 
@@ -46,6 +44,24 @@ git clone https://github.com/javiermiz/claude-pets && cd claude-pets && ./build.
 La 🐾 de la barre des menus propose **Ouvrir à la connexion** et **Quitter**. Un clic droit sur un animal quitte aussi l'application.
 
 Pour mettre à jour, relancez la commande d'installation. Pour désinstaller, quittez l'application et supprimez `~/Applications/ClaudePets.app`.
+
+## Windows
+
+Nécessite Windows 10 ou 11 (x64). Dans PowerShell :
+
+```powershell
+irm https://raw.githubusercontent.com/javiermiz/claude-pets/main/install.ps1 | iex
+```
+
+Cela télécharge le dernier installateur depuis les [Releases](https://github.com/javiermiz/claude-pets/releases/latest), installe Claude Pets pour votre utilisateur (sans droits administrateur) et le lance. Vous pouvez aussi télécharger `ClaudePets-Setup.exe` depuis les Releases et double-cliquer dessus, ou prendre la version portable `ClaudePets-windows-x64.zip`, la décompresser où vous voulez et lancer `ClaudePets.exe`. Ils ne sont pas signés, donc SmartScreen peut vous avertir la première fois : **Informations complémentaires → Exécuter quand même**.
+
+La 🐾 se trouve dans la zone de notification : clic droit pour le même menu que sur Mac. Les résumés IA utilisent le CLI `claude` installé nativement (`%USERPROFILE%\.local\bin\claude.exe`) ou avec npm.
+
+La version Windows est faite avec Electron (le dossier `windows/`), elle est donc plus lourde (installateur d'environ 80 Mo). Elle ne compte pas encore les shells en arrière-plan : une session qui n'attend qu'un shell en arrière-plan apparaît comme terminée. Pour la désinstaller : **Paramètres → Applications → Claude Pets**. Pour la compiler vous-même (sur n'importe quel système, avec Node.js) :
+
+```sh
+cd windows && npm install && npm run dist
+```
 
 ## Fonctionnement
 

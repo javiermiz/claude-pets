@@ -2,9 +2,7 @@
 
 [English](README.md) · [Español](README.es.md) · [Português](README.pt.md) · [Français](README.fr.md) · **Deutsch** · [Italiano](README.it.md) · [日本語](README.ja.md) · [简体中文](README.zh.md) · [한국어](README.ko.md)
 
-Deine [Claude Code](https://claude.com/claude-code)-Sitzungen als 8-Bit-Haustiere, die am unteren Rand deines Mac-Bildschirms herumlaufen.
-
-[![Claude Pets promo](docs/promo/poster-en.png)](https://github.com/javiermiz/claude-pets/releases/download/v1.2.0/claude-pets-promo-en.mp4)
+Deine [Claude Code](https://claude.com/claude-code)-Sitzungen als 8-Bit-Haustiere, die am unteren Bildschirmrand herumlaufen, auf macOS und Windows.
 
 ![Claude Pets](docs/zoo.png)
 
@@ -46,6 +44,24 @@ git clone https://github.com/javiermiz/claude-pets && cd claude-pets && ./build.
 Die 🐾 in der Menüleiste bietet **Bei Anmeldung öffnen** und **Beenden**. Ein Rechtsklick auf ein Tier beendet die App ebenfalls.
 
 Zum Aktualisieren führe den Installationsbefehl erneut aus. Zum Deinstallieren beende die App und lösche `~/Applications/ClaudePets.app`.
+
+## Windows
+
+Benötigt Windows 10 oder 11 (x64). In PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/javiermiz/claude-pets/main/install.ps1 | iex
+```
+
+Das lädt das neueste Installationsprogramm aus den [Releases](https://github.com/javiermiz/claude-pets/releases/latest), installiert Claude Pets für deinen Benutzer (ohne Adminrechte) und startet es. Du kannst `ClaudePets-Setup.exe` auch selbst aus den Releases laden und doppelklicken, oder die portable `ClaudePets-windows-x64.zip` irgendwo entpacken und `ClaudePets.exe` starten. Sie sind nicht signiert, daher warnt SmartScreen beim ersten Mal eventuell: **Weitere Informationen → Trotzdem ausführen**.
+
+Die 🐾 sitzt im Infobereich der Taskleiste: Rechtsklick öffnet dasselbe Menü wie auf dem Mac. KI-Zusammenfassungen nutzen die `claude`-CLI, nativ installiert (`%USERPROFILE%\.local\bin\claude.exe`) oder über npm.
+
+Die Windows-Version ist mit Electron gebaut (Ordner `windows/`) und daher größer (~80 MB Installer). Hintergrund-Shells zählt sie noch nicht: Eine Sitzung, die nur auf eine Hintergrund-Shell wartet, erscheint als fertig. Deinstallieren: **Einstellungen → Apps → Claude Pets**. Selbst bauen (auf jedem System, mit Node.js):
+
+```sh
+cd windows && npm install && npm run dist
+```
 
 ## So funktioniert es
 

@@ -2,9 +2,7 @@
 
 [English](README.md) · [Español](README.es.md) · [Português](README.pt.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · **日本語** · [简体中文](README.zh.md) · [한국어](README.ko.md)
 
-[Claude Code](https://claude.com/claude-code) のセッションが、8ビットのペットになって Mac の画面下を歩き回ります。
-
-[![Claude Pets promo](docs/promo/poster-en.png)](https://github.com/javiermiz/claude-pets/releases/download/v1.2.0/claude-pets-promo-en.mp4)
+[Claude Code](https://claude.com/claude-code) のセッションが、8ビットのペットになって画面下を歩き回ります（macOS・Windows 対応）。
 
 ![Claude Pets](docs/zoo.png)
 
@@ -46,6 +44,24 @@ git clone https://github.com/javiermiz/claude-pets && cd claude-pets && ./build.
 メニューバーの 🐾 から**ログイン時に開く**と**終了**を選べます。ペットを右クリックしても終了できます。
 
 アップデートするには、インストールコマンドをもう一度実行します。アンインストールするには、アプリを終了して `~/Applications/ClaudePets.app` を削除します。
+
+## Windows
+
+Windows 10 または 11（x64）が必要です。PowerShell で：
+
+```powershell
+irm https://raw.githubusercontent.com/javiermiz/claude-pets/main/install.ps1 | iex
+```
+
+[Releases](https://github.com/javiermiz/claude-pets/releases/latest) から最新のインストーラーをダウンロードし、Claude Pets を現在のユーザーにインストール（管理者権限は不要）して起動します。Releases から `ClaudePets-Setup.exe` をダウンロードしてダブルクリックするか、ポータブル版の `ClaudePets-windows-x64.zip` を好きな場所に展開して `ClaudePets.exe` を実行することもできます。署名されていないため、初回は SmartScreen が警告することがあります：**詳細情報 → 実行**。
+
+🐾 は通知領域（システムトレイ）にあります。右クリックで Mac と同じメニューが開きます。AI 要約には、ネイティブ版（`%USERPROFILE%\.local\bin\claude.exe`）または npm でインストールした `claude` CLI を使います。
+
+Windows 版は Electron で作られているため（`windows/` フォルダ）、サイズが大きめです（インストーラー約 80 MB）。バックグラウンドのシェルはまだ数えません：バックグラウンドのシェルだけを待っているセッションは完了として表示されます。アンインストール：**設定 → アプリ → Claude Pets**。自分でビルドするには（どの OS でも、Node.js があれば）：
+
+```sh
+cd windows && npm install && npm run dist
+```
 
 ## 仕組み
 

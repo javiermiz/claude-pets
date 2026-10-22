@@ -1,0 +1,60 @@
+{
+  "name": "claude-pets",
+  "productName": "Claude Pets",
+  "version": "1.3.0",
+  "description": "A companion for Claude Code: your sessions as pixel-art pets at the bottom of the screen",
+  "main": "main.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "sh build.sh assets && electron .",
+    "dist": "sh build.sh"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "author": "Javier Miz",
+  "build": {
+    "appId": "com.javiermiz.claudepets",
+    "productName": "Claude Pets",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "i18n.json",
+      "icon.ico",
+      "icon.png",
+      "tray.png",
+      "assets/**"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false,
+      "executableName": "ClaudePets",
+      "artifactName": "ClaudePets-windows-x64.${ext}",
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "artifactName": "ClaudePets-Setup.exe"
+    }
+  }
+}

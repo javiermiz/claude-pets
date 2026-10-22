@@ -24,7 +24,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleIdentifier</key><string>com.javiermiz.claudepets</string>
   <key>CFBundleName</key><string>Claude Pets</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
-  <key>CFBundleShortVersionString</key><string>1.2</string>
+  <key>CFBundleShortVersionString</key><string>1.3</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
 </dict></plist>

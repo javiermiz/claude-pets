@@ -2,9 +2,7 @@
 
 [English](README.md) · [Español](README.es.md) · **Português** · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [简体中文](README.zh.md) · [한국어](README.ko.md)
 
-Suas sessões do [Claude Code](https://claude.com/claude-code) como bichinhos 8-bit passeando pela parte de baixo da tela do seu Mac.
-
-[![Claude Pets promo](docs/promo/poster-en.png)](https://github.com/javiermiz/claude-pets/releases/download/v1.2.0/claude-pets-promo-en.mp4)
+Suas sessões do [Claude Code](https://claude.com/claude-code) como bichinhos 8-bit passeando pela parte de baixo da sua tela, no macOS e no Windows.
 
 ![Claude Pets](docs/zoo.png)
 
@@ -46,6 +44,24 @@ git clone https://github.com/javiermiz/claude-pets && cd claude-pets && ./build.
 A 🐾 na barra de menus tem **Abrir ao iniciar sessão** e **Sair**. Clicar com o botão direito em um bichinho também fecha o app.
 
 Para atualizar, rode o comando de instalação de novo. Para desinstalar, feche o app e apague `~/Applications/ClaudePets.app`.
+
+## Windows
+
+Requer Windows 10 ou 11 (x64). No PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/javiermiz/claude-pets/main/install.ps1 | iex
+```
+
+Isso baixa o instalador mais recente de [Releases](https://github.com/javiermiz/claude-pets/releases/latest), instala o Claude Pets para o seu usuário (sem administrador) e o abre. Você também pode baixar o `ClaudePets-Setup.exe` em Releases e abri-lo com dois cliques, ou pegar o portátil `ClaudePets-windows-x64.zip`, descompactá-lo onde quiser e rodar `ClaudePets.exe`. Eles não são assinados, então o SmartScreen pode avisar na primeira vez: **Mais informações → Executar assim mesmo**.
+
+A 🐾 fica na área de notificação (bandeja do sistema): clique com o botão direito para ver o mesmo menu do Mac. Os resumos com IA usam o CLI `claude` instalado nativamente (`%USERPROFILE%\.local\bin\claude.exe`) ou via npm.
+
+A versão para Windows é feita com Electron (a pasta `windows/`), por isso é maior (instalador de ~80 MB). Ela ainda não conta shells em segundo plano: uma sessão que só espera um shell em segundo plano aparece como terminada. Para desinstalar: **Configurações → Aplicativos → Claude Pets**. Para compilar você mesmo (em qualquer sistema, com Node.js):
+
+```sh
+cd windows && npm install && npm run dist
+```
 
 ## Como funciona
 
