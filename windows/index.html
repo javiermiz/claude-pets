@@ -119,13 +119,13 @@ function ducklings(s) {
 
 // Workers: nobody walks. A session works at its desk; with subagents the team meets around a table.
 const stationWidth = (team) => team <= 1 ? 36 : Math.floor((team + 1) / 2) * 14 + 34 + Math.floor(team / 2) * 14
-function stations() { // side by side from the left, in the order sessions first appeared
+function stations() { // side by side from the right edge, where windows keep the least, in the order sessions first appeared
   const ids = st.sessions.map((s) => s.id)
   order = order.filter((id) => ids.includes(id)).concat(ids.filter((id) => !order.includes(id)))
-  let at = 40
+  let at = innerWidth - 40
   return order.map((id) => {
     const s = st.sessions.find((x) => x.id === id), w = Math.max(stationWidth(1 + Math.min(5, s.subs.length)) * K, 200)
-    const c = at + w / 2; at += w + 30 // ponytail: no wrapping; past the screen edge they just run off
+    const c = at - w / 2; at -= w + 30 // ponytail: no wrapping; past the screen edge they just run off
     return { s, center: c }
   })
 }

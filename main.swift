@@ -350,16 +350,17 @@ final class World: ObservableObject {
         Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in self?.tick() }
     }
 
-    // workers: stations side by side from the left, in the order sessions first appeared
+    // workers: stations side by side from the right edge, where windows keep the least (sidebars and
+    // the left half of the screen stay clear), in the order sessions first appeared
     private var stationOrder: [String] = []
     func stations() -> [(s: Session, center: CGFloat)] {
         let ids = store.sessions.map(\.id)
         stationOrder = stationOrder.filter { ids.contains($0) } + ids.filter { !stationOrder.contains($0) }
-        var x: CGFloat = 40, out: [(Session, CGFloat)] = []
+        var x: CGFloat = width - 40, out: [(Session, CGFloat)] = []
         for id in stationOrder {
             guard let s = store.sessions.first(where: { $0.id == id }) else { continue }
             let w = Station.width(1 + min(5, store.subagents[id]?.count ?? 0)) * K
-            out.append((s, x + max(w, 200) / 2)); x += max(w, 200) + 30 // room for the name tag; ponytail: no wrapping; past the screen edge they just run off
+            out.append((s, x - max(w, 200) / 2)); x -= max(w, 200) + 30 // room for the name tag; ponytail: no wrapping; past the screen edge they just run off
         }
         return out
     }
