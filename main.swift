@@ -353,6 +353,8 @@ final class World: ObservableObject {
     // workers: stations side by side from the right edge, where windows keep the least (sidebars and
     // the left half of the screen stay clear), in the order sessions first appeared
     private var stationOrder: [String] = []
+    var placed: [String: CGFloat] = [:]   // stations the user dragged somewhere: they stay there
+    var dragFrom: CGFloat?
     func stations() -> [(s: Session, center: CGFloat)] {
         let ids = store.sessions.map(\.id)
         stationOrder = stationOrder.filter { ids.contains($0) } + ids.filter { !stationOrder.contains($0) }
@@ -360,7 +362,7 @@ final class World: ObservableObject {
         for id in stationOrder {
             guard let s = store.sessions.first(where: { $0.id == id }) else { continue }
             let w = Station.width(1 + min(5, store.subagents[id]?.count ?? 0)) * K
-            out.append((s, x - max(w, 200) / 2)); x -= max(w, 200) + 30 // room for the name tag; ponytail: no wrapping; past the screen edge they just run off
+            out.append((s, placed[id] ?? x - max(w, 200) / 2)); if placed[id] == nil { x -= max(w, 200) + 30 } // room for the name tag; ponytail: no wrapping; past the screen edge they just run off
         }
         return out
     }
@@ -684,6 +686,11 @@ struct ContentView: View {
                 if workers {
                     ForEach(world.stations(), id: \.s.id) { st in
                         Station(s: st.s, world: world)
+                            .gesture(DragGesture(minimumDistance: 4).onChanged { v in // drag a workstation anywhere along the floor
+                                let from = world.dragFrom ?? st.center
+                                world.dragFrom = from
+                                world.placed[st.s.id] = min(max(from + v.translation.width, 60), geo.size.width - 60)
+                            }.onEnded { _ in world.dragFrom = nil })
                             .position(x: st.center, y: geo.size.height - 4 - 11 * K)
                             .zIndex(world.hovered == st.s.id ? 2 : 1)
                     }

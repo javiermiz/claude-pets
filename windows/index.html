@@ -64,6 +64,8 @@ function spr(name, frame, scale, style = '') { // one frame of a strip, bottom-l
 
 // World: busy pets wander along the floor; ducklings follow the one ahead at their own pace
 const x = {}, vx = {}, sub = {}
+const placed = {} // stations the user dragged somewhere: they stay there
+let drag = null
 let t = 0, hovered = null, mouse = null, inside = false, last = performance.now(), order = []
 const pos = (id) => x[id] ??= 40 + Math.random() * Math.max(1, innerWidth - 80)
 const right = (id) => (vx[id] ?? -1) > 0
@@ -125,7 +127,7 @@ function stations() { // side by side from the right edge, where windows keep th
   let at = innerWidth - 40
   return order.map((id) => {
     const s = st.sessions.find((x) => x.id === id), w = Math.max(stationWidth(1 + Math.min(5, s.subs.length)) * K, 200)
-    const c = at - w / 2; at -= w + 30 // ponytail: no wrapping; past the screen edge they just run off
+    const c = placed[id] ?? at - w / 2; if (placed[id] == null) at -= w + 30 // ponytail: no wrapping; past the screen edge they just run off
     return { s, center: c }
   })
 }
@@ -198,6 +200,17 @@ function frame(now) {
 requestAnimationFrame(frame)
 addEventListener('mousemove', (e) => (mouse = { x: e.clientX, y: e.clientY }))
 addEventListener('mouseleave', () => (mouse = null))
-addEventListener('click', () => hovered && pets.open(hovered))
+// drag a workstation anywhere along the floor; a click that didn't move opens the session
+addEventListener('mousedown', (e) => {
+  const st = workers() && hovered && stations().find((x) => x.s.id === hovered)
+  if (st) drag = { id: st.s.id, from: st.center, x: e.clientX, moved: false }
+})
+addEventListener('mousemove', (e) => {
+  if (!drag || (!drag.moved && Math.abs(e.clientX - drag.x) < 4)) return
+  drag.moved = true
+  placed[drag.id] = Math.min(Math.max(drag.from + e.clientX - drag.x, 60), innerWidth - 60)
+})
+addEventListener('mouseup', () => setTimeout(() => (drag = null)))
+addEventListener('click', () => hovered && !drag?.moved && pets.open(hovered))
 addEventListener('contextmenu', (e) => { e.preventDefault(); pets.menu() })
 </script>
