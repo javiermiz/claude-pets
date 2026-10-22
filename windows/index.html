@@ -39,7 +39,7 @@ pets.onState((s) => {
   st = s
   for (const [dir, names] of Object.entries(s.sprites)) for (const name of names) {
     if (img[name]) continue
-    const i = new Image(), n = dir === 'pets' ? 5 : name.startsWith('worker_') ? 12 : name === 'desk_side' ? 3 : 1
+    const i = new Image(), n = dir === 'pets' ? 5 : name.startsWith('worker_') ? 13 : name === 'desk_side' ? 3 : 1
     i.onload = () => (img[name] = { url: i.src, w: i.width / n, h: i.height, n })
     i.src = `assets/${dir}/${name}.png`
   }
@@ -161,14 +161,14 @@ function station({ s, center }) {
   const held = drag?.moved && drag.id === s.id
   if (!subs.length) { // at the desk
     art += px('chair_side', 0, 0)
-    art += held ? px(me, Math.floor(t * 8) % 2 ? 6 : 11, 1, 2) // picked up: arms up, kicking
+    art += held ? px(me, Math.floor(t * 8) % 2 ? 11 : 12, 1, 2) // picked up: arms up, kicking
       : s.busy ? px(me, s.turn ? 9 + Math.floor(t * 5) % 2 : 9, 1, 1) : px(me, cheer, -1, cheer === 11 ? 3 : 0) // done: up and cheering
     art += px('desk_side', s.turn ? Math.floor(t * 2) % 2 : 2, 12)
   } else {            // team meeting: half on each side of the table, the speaker takes turns
     const team = [me, ...subs.map((a) => workerOf(a.id))], left = Math.ceil(team.length / 2), speaker = Math.floor(t / 2.5) % team.length
     team.forEach((name, i) => {
       const at = i < left ? i * 14 : left * 14 + 34 + (i - left) * 14
-      const f = held ? (Math.floor(t * 8 + i) % 2 ? 6 : 11) : i === 0 && !s.busy ? cheer : 6
+      const f = held ? (Math.floor(t * 8 + i) % 2 ? 11 : 12) : i === 0 && !s.busy ? cheer : 6
       art += px(name, f, at, (i === speaker && s.busy && Math.floor(t * 4) % 2 === 0 ? 1 : 0) + (f === 11 ? 3 : 0), i >= left)
     })
     art += px('meeting_table', 0, left * 14 + 2)

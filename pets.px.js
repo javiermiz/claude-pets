@@ -6,7 +6,8 @@ pal({
   b: "#a0704a", B: "#6b4630", g: "#9aa0aa", G: "#5f6670", d: "#3a3348", D: "#241f30",
   y: "#ffd84a", Y: "#e8b030", a: "#f08a2b", n: "#2b2738", z: "#7fcf6a", Z: "#4f9a4a",
   v: "#d8f0a0", q: "#f7a8bf", Q: "#d9748f", t: "#d8b48a", T: "#a8845e", l: "#c8e09a",
-  S: "#f2c9a0", h: "#3a2a2a", u: "#6aa0e8", U: "#4a78c0", // workers: skin, hair, shirt
+  S: "#f2c9a0", E: "#d8a882", h: "#3a2a2a", u: "#6aa0e8", U: "#4a78c0", // workers: skin, ear, hair, shirt
+  c: "#e2585f", C: "#a63a4d", P: "#4a78c1", // cap, cap brim, headphones (unique values: swaps match by color)
 })
 
 // Leg rows per frame: strides draw rows 9-10, bob frames only row 10 (body sits 1px lower).
@@ -239,50 +240,95 @@ scene("zoo", { w: 6 * 20, h: 4 * 15, bg: "#e8e4f0" }, ...ALL.map((n, i) => stamp
 scene("icon", { w: 24, h: 24, bg: "#e8e4f0" }, stamp("cat", 1, 5, { frame: 0 }))
 
 // =============== workers: the alternative style (menu bar 🐾 → Workers)
-// 14x14 + outline. Frames: 0-2 front, 3-5 back, 6-8 side (faces right), 9-10 seated typing, 11 cheering
+// 14x14 + outline. Frames: 0-2 front, 3-5 back, 6-8 side (faces right), 9-10 seated typing, 11 cheering,
+// 12 held up by the cursor (arms up, legs dangling). Body, hair and accessory are separate layers, so every
+// worker mixes a haircut, an accessory and its colors.
 const m = (r) => r + [...r].reverse().join("")
-const FRONT = ["....hhh", "..hhhhh", ".hhhhhh", ".hhhSSS", ".hSSeSS", ".hSpSSS", "..SSSSS", "...uuuu", "..uuuuu", ".SuuuUU", "..uuuuu", "...nnnn"].map(m).join("\n")
-const BACK = ["....hhh", "..hhhhh", ".hhhhhh", ".hhhhhh", ".hhhhhh", ".hhhhhh", "..hhhhh", "...uuuu", "..uuuuu", ".SuuuUU", "..uuuuu", "...nnnn"].map(m).join("\n")
-const SIDE = `
-....hhhhh.....
-...hhhhhhhh...
-..hhhhhhhhhh..
-..hhhhhhSSSS..
-..hhhhhSSSeS..
-..hhhhhSSSSS..
-...hhhSSSpS...
+const M = (rows) => rows.map(m).join("\n")
+const BODY = {
+  front: M(["...SSSS", "..SSSSS", ".SSSSSS", ".SSSSSS", ".SSeSSS", ".SpSSSS", "..SSSSS", "..uuuuS", ".Uuuuuu", ".Uuuuuu", ".Suuuuu", "..nnnnn"]),
+  back: M(["...SSSS", "..SSSSS", ".SSSSSS", ".SSSSSS", ".SSSSSS", ".SSSSSS", "..SSSSS", "..uuuuu", ".Uuuuuu", ".Uuuuuu", ".Suuuuu", "..nnnnn"]),
+  side: `
+....SSSSS.....
+...SSSSSSS....
+..SSSSSSSSS...
+..SSSSSSSSSS..
+..SSSESSSeSS..
+..SSSSSSSpS...
+...SSSSSSS....
+.....uuuu.....
 ....uuuuuu....
-...uuuuuuu....
-...uuuUuuu....
-...uuuSuuu....
-....nnnnn.....`
+....uuUuuu....
+....uuSuuu....
+....nnnnnn....`,
+}
+// hair per view; "back" covers the whole head
+const HAIRCUTS = {
+  short: { front: M(["...hhhh", "..hhhhh", ".hhhhhh", ".hh....", ".h....."]),
+    side: "....hhhhh.....\n...hhhhhhhh...\n..hhhhhhhhhh..\n..hhh.....h...\n..hh..........\n..h..........." },
+  long: { front: M(["...hhhh", "..hhhhh", ".hhhhhh", "hhh....", "hh.....", "hh.....", "hh.....", "hh....."]),
+    side: "....hhhhh.....\n...hhhhhhhh...\n..hhhhhhhhhh..\n.hhhh.....h...\n.hhh..........\n.hhh..........\n.hhh..........\n..hh..........\n..h..........." },
+  spiky: { front: M(["...h..h", "..hhhhh", ".hhhhhh", ".h.h...", "......."]),
+    side: ".....h.h.h....\n...hhhhhhhh...\n..hhhhhhhhhh..\n..hhh....h.h..\n..hh..........\n.............." },
+  buzz: { front: M(["...hhhh", "..hhhhh", ".h.....", ".h....."]),
+    side: "....hhhhh.....\n...hhhhhhh....\n..hhh.........\n..hh.........." },
+  cap: { front: M(["...cccc", "..ccccc", ".CCCCCC", ".h.....", ".h....."]),
+    side: "....ccccc.....\n...ccccccc....\n..cccccCCCCCCC\n..hhh.........\n..hh.........." },
+  ponytail: { front: M(["...hhhh", "..hhhhh", ".hhhhhh", ".hh....", ".h....."]),
+    side: "....hhhhh.....\n...hhhhhhhh...\n.hhhhhhhhhhh..\nhhhhh.....h...\nhh.hh.........\nh............." },
+}
+const ACCESSORIES = { // y: the row it starts on (pxl trims leading empty rows)
+  none: { y: 0, front: "", side: "" },
+  glasses: { y: 4, front: M([".kwekkk"]), side: ".....kkkwek" },
+  headphones: { y: 0, front: M(["...gggg", "..g....", ".g.....", "PP.....", "PP.....", "PP....."]),
+    side: ".....g\n.....g\n.....g\n....PPP\n....PPP\n....PPP" },
+  beard: { y: 5, front: M([".h.....", "..hhhhh", "....hhS"]), side: "...hhhhhh\n....hhhhh" },
+}
 const LEGS = {
   stand: "....nn..nn....\n....DD..DD....", a: "....nn..nn....\n....DD........", b: "....nn..nn....\n........DD....",
   side: ".....nn.......\n.....DD.......", sa: "....n...n.....\n...DD...DD....", sb: "....n..n......\n....D..D......",
+  dangle: "...nn....nn...\n...D......D...",
 }
-const pose = (body, legs, extra = []) => frame(grid(0, 0, body), ...(legs ? [grid(0, 12, LEGS[legs])] : []), ...extra)
-function worker(name, swap) {
+// both arms raised from the shoulders, hands over the head (cheering, or held up by the cursor)
+const ARMS_UP = [grid(0, 9, "._.........._.\n._.........._."), grid(0, 1, "S............S\nU............U\nU............U\nU............U\nU............U\nU............U\n.U..........U.")]
+function worker(name, swap, cut, acc) {
+  const head = (view, dy = 0) => view === "back" ? [grid(0, dy, M(["...hhhh", "..hhhhh", ".hhhhhh", ".hhhhhh", ".hhhhhh", ".hhhhhh"]))]
+    : [grid(0, dy, HAIRCUTS[cut][view]), grid(0, dy + ACCESSORIES[acc].y, ACCESSORIES[acc][view])]
+  const pose = (view, legs, extra = []) => frame(grid(0, 0, BODY[view]), ...head(view), grid(0, 12, LEGS[legs]), ...extra)
+  const seated = (arm) => frame(grid(0, 1, BODY.side), ...head("side", 1), grid(0, 13, "....nnnnnn...."),
+    grid(6, 11, "u"), ...arm) // the hanging hand becomes sleeve: the arm reaches for the keyboard
   anim(name, { w: 14, h: 14, outline: "k", swap },
-    pose(FRONT, "stand"), pose(FRONT, "a"), pose(FRONT, "b"),
-    pose(BACK, "stand"), pose(BACK, "a"), pose(BACK, "b"),
-    pose(SIDE, "side"), pose(SIDE, "sa"), pose(SIDE, "sb"),
-    // seated at the desk, facing right: thighs forward, hands on the keyboard (one up, one down)
-    frame(grid(0, 1, SIDE), grid(0, 13, "....nnnnnn...."), grid(0, 10, ".......uuuSS..")),
-    frame(grid(0, 1, SIDE), grid(0, 13, "....nnnnnn...."), grid(0, 10, ".......uuu...."), grid(10, 9, "S")),
-    pose(FRONT, "stand", [grid(0, 2, "S............S\nu............u\nu............u"), grid(6, 6, "kk")]),
+    pose("front", "stand"), pose("front", "a"), pose("front", "b"),
+    pose("back", "stand"), pose("back", "a"), pose("back", "b"),
+    pose("side", "side"), pose("side", "sa"), pose("side", "sb"),
+    seated([grid(0, 10, ".......uUuSS..")]),
+    seated([grid(0, 10, ".......uUu...."), grid(10, 9, "SS")]),
+    pose("front", "stand", [...ARMS_UP, grid(6, 6, "kk")]),
+    pose("front", "dangle", [...ARMS_UP, grid(6, 6, "kk")]),
   )
 }
 const SKIN = ["#f2c9a0", "#e0ac7e", "#b97a4f", "#8f5a36"]
-const HAIR = ["#3a2a2a", "#7a4a2a", "#e8c060", "#c4552e", "#1b1630", "#f29bb0", "#6aa0e8"]
-const SHIRT = [["#6aa0e8", "#4a78c0"], ["#7fcf6a", "#4f9a4a"], ["#b48ce0", "#7f5fb0"], ["#9aa0aa", "#5f6670"], ["#f3e3c3", "#c9b28a"], ["#5ad1c0", "#2f9a8c"]]
+const HAIR = ["#3a2a2a", "#7a4a2a", "#e8c060", "#c4552e", "#1b1630", "#f29bb0", "#6aa0e8", "#c9ccd6"]
+const SHIRT = [["#6aa0e8", "#4a78c0"], ["#7fcf6a", "#4f9a4a"], ["#b48ce0", "#7f5fb0"], ["#9aa0aa", "#5f6670"], ["#f3e3c3", "#c9b28a"], ["#5ad1c0", "#2f9a8c"], ["#f08a5d", "#c4552e"], ["#f2c94c", "#c99a2e"]]
 const PANTS = ["#3a4a7a", "#3a3348", "#6b4630", "#5f6670"]
-for (let i = 0; i < 16; i++) {
+const CAPS = [["#e2585e", "#a63a4c"], ["#4a78c0", "#2f4f8a"], ["#4f9a4a", "#2f6a3a"], ["#f2c94c", "#c99a2e"]]
+const CUTS = Object.keys(HAIRCUTS)
+const ACCS = ["none", "glasses", "headphones", "none", "beard", "glasses", "none", "headphones"]
+const WORKERS = 24
+// each worker picks its looks from its own little random sequence, so no two neighbors match
+const pick = (i, k, list) => list[Math.floor(Math.abs(Math.sin(i * 12.9898 + k * 78.233) * 43758.5453) % list.length)]
+for (let i = 0; i < WORKERS; i++) {
+  const cut = CUTS[i % CUTS.length], acc = ACCS[(i * 3 + Math.floor(i / 6)) % ACCS.length], skin = pick(i, 1, [0, 1, 2, 3]), shirt = pick(i, 2, SHIRT)
+  const cap = pick(i, 4, CAPS)
   worker("worker_" + String(i).padStart(2, "0"), {
-    S: SKIN[i % 4], h: HAIR[(i * 3) % 7], u: SHIRT[(i * 5) % 6][0], U: SHIRT[(i * 5) % 6][1], n: PANTS[(i * 7) % 4],
-  })
+    S: SKIN[skin], E: ["#d8a882", "#c48c60", "#9a6038", "#6f4226"][skin], h: pick(i, 3, HAIR),
+    u: shirt[0], U: shirt[1], n: pick(i, 5, PANTS), c: cap[0], C: cap[1], P: pick(i, 6, CAPS)[1],
+  }, cut, cut === "long" && acc === "headphones" ? "glasses" : acc)
 }
-scene("crew", { w: 8 * 18, h: 2 * 18, bg: "#e8e4f0" },
-  ...Array.from({ length: 16 }, (_, i) => stamp("worker_" + String(i).padStart(2, "0"), (i % 8) * 18 + 1, Math.floor(i / 8) * 18 + 1, { frame: i % 2 ? 11 : 6 })))
+scene("crew", { w: 8 * 18, h: 3 * 18, bg: "#e8e4f0" },
+  ...Array.from({ length: WORKERS }, (_, i) => stamp("worker_" + String(i).padStart(2, "0"), (i % 8) * 18 + 1, Math.floor(i / 8) * 18 + 1, { frame: 0 })))
+scene("poses", { w: 13 * 17, h: 18, bg: "#e8e4f0" },
+  ...Array.from({ length: 13 }, (_, f) => stamp("worker_00", f * 17 + 1, 1, { frame: f })))
 
 // workstation and meeting table for the workers style (side view, worker sits on the left facing right)
 anim("desk_side", { w: 22, h: 14, outline: "k" },

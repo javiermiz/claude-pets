@@ -453,7 +453,7 @@ final class World: ObservableObject {
 }
 
 // Pixel art from pets.px.js, one strip per character. Two styles, picked in the menu bar:
-// pets (5 frames: 0-3 walk, 4 lying down) and workers (12 frames: 6-8 side walk, 11 cheering)
+// pets (5 frames: 0-3 walk, 4 lying down) and workers (13 frames: 6-8 side walk, 11 cheering, 12 held up)
 func strips(_ dir: String, _ n: Int, prefix: String = "") -> [[CGImage]] {
     let urls = (Bundle.main.urls(forResourcesWithExtension: "png", subdirectory: dir) ?? []).filter { $0.lastPathComponent.hasPrefix(prefix) }
     return urls.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { url in
@@ -464,7 +464,7 @@ func strips(_ dir: String, _ n: Int, prefix: String = "") -> [[CGImage]] {
     }
 }
 let petSprites = strips("pets", 5)
-let workerSprites = strips("workers", 12, prefix: "worker_")
+let workerSprites = strips("workers", 13, prefix: "worker_")
 let office: [String: [CGImage]] = { // desk (3 frames: code, code, off), chair, meeting table — live next to the workers
     var out: [String: [CGImage]] = [:]
     for (name, n) in [("desk_side", 3), ("chair_side", 1), ("meeting_table", 1)] {
@@ -633,7 +633,7 @@ struct Station: View {
         ZStack(alignment: .bottomLeading) {
             if subs.isEmpty { // at the desk
                 px(office["chair_side"]?.first, x: 0)
-                if world.held == s.id { px(me[safe: Int(t * 8) % 2 == 0 ? 11 : 6], x: 1, up: 2) } // picked up: arms up, kicking
+                if world.held == s.id { px(me[safe: Int(t * 8) % 2 == 0 ? 12 : 11], x: 1, up: 2) } // picked up: arms up, kicking
                 else if s.busy { px(me[safe: s.turn ? 9 + Int(t * 5) % 2 : 9], x: 1, up: 1) }
                 else { px(me[safe: cheer], x: -1, up: cheer == 11 ? 3 : 0) } // done: up and cheering
                 px(office["desk_side"]?[s.turn ? Int(t * 2) % 2 : 2], x: 12)
@@ -644,7 +644,7 @@ struct Station: View {
                 ForEach(0..<team.count, id: \.self) { i in
                     let x = i < left ? CGFloat(i * 14) : CGFloat(left * 14 + 34 + (i - left) * 14)
                     let talking = i == speaker && s.busy
-                    let f = world.held == s.id ? (Int(t * 8 + Double(i)) % 2 == 0 ? 11 : 6) : i == 0 && !s.busy ? cheer : 6
+                    let f = world.held == s.id ? (Int(t * 8 + Double(i)) % 2 == 0 ? 12 : 11) : i == 0 && !s.busy ? cheer : 6
                     px(team[i][safe: f], x: x, up: (talking && Int(t * 4) % 2 == 0 ? 1 : 0) + (f == 11 ? 3 : 0), flip: i >= left)
                 }
                 px(office["meeting_table"]?.first, x: CGFloat(left * 14 + 2))
