@@ -4,6 +4,8 @@
 
 Vos sessions [Claude Code](https://claude.com/claude-code) sous forme d'animaux 8-bit qui se promènent en bas de l'écran de votre Mac.
 
+[![Claude Pets promo](docs/promo/poster-en.png)](https://github.com/javiermiz/claude-pets/releases/download/v1.2.0/claude-pets-promo-en.mp4)
+
 ![Claude Pets](docs/zoo.png)
 
 ![Workers](docs/workers.png)
@@ -11,7 +13,7 @@ Vos sessions [Claude Code](https://claude.com/claude-code) sous forme d'animaux 
 - **Chaque session active sur ce Mac est un animal.** Une session a toujours le même animal (il y en a 23), avec son nom affiché au-dessus.
 - **Deux styles**, au choix dans le menu 🐾 : des animaux qui se promènent, ou des **employés** de bureau qui tapent à leur poste, font une **réunion d'équipe** autour d'une table quand leur session a des sous-agents, et sautent de joie quand ils ont fini.
 - **Des bulles** disent ce que fait chaque agent en ce moment (⌨️ la commande, ✏️ le fichier qu'il modifie…) ou, quand c'est ton tour, ce qu'il t'a dit.
-- **Mini-résumés** (optionnel) : si le CLI `claude` est connecté, Claude Haiku écrit une phrase de 7 mots pour chaque bulle, avec ton abonnement.
+- **Mini-résumés** (optionnel) : si le CLI `claude` est connecté, Claude Haiku écrit une phrase de 7 mots pour chaque bulle, avec ton abonnement. Le menu 🐾 indique s'ils sont actifs et ouvre `claude /login` pour toi.
 - **Une notification** (avec son) quand une session passe de « au travail » à « attend ta réponse ». Clique dessus pour ouvrir la session.
 - Les animaux **au travail** se promènent. Ceux qui ont **terminé** se couchent avec un ✓ vert et attendent votre clic.
 - **Cliquez** sur un animal pour ouvrir sa session dans l'application de bureau Claude.

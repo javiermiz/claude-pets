@@ -4,6 +4,8 @@
 
 Your [Claude Code](https://claude.com/claude-code) sessions, as 8-bit pets walking along the bottom of your Mac screen.
 
+[![Claude Pets promo](docs/promo/poster-en.png)](https://github.com/javiermiz/claude-pets/releases/download/v1.2.0/claude-pets-promo-en.mp4)
+
 ![Claude Pets](docs/zoo.png)
 
 ![Workers](docs/workers.png)
@@ -11,7 +13,7 @@ Your [Claude Code](https://claude.com/claude-code) sessions, as 8-bit pets walki
 - **Every session working on this Mac is a pet.** Each session always gets the same animal (23 of them), with its name floating above it.
 - **Two styles**, picked from the 🐾 menu: pets that walk around, or office **workers** who sit at their desks typing, hold a **team meeting** around a table when their session has subagents, and jump for joy when they finish.
 - **Speech bubbles** say what each agent is doing right now (⌨️ the command, ✏️ the file it edits…) or, when it's your turn, what it told you.
-- **Tiny summaries** (optional): if the `claude` CLI is logged in, Claude Haiku writes a 7-word label for each bubble, using your subscription.
+- **Tiny summaries** (optional): if the `claude` CLI is logged in, Claude Haiku writes a 7-word label for each bubble, using your subscription. The 🐾 menu shows if they're on and opens `claude /login` for you.
 - **A notification** (with sound) when a session goes from working to waiting for your reply. Click it to open the session.
 - **Working** pets walk around. **Finished** ones lie down with a green ✓ and wait until you click them.
 - **Click** a pet to jump to that session in the Claude desktop app.

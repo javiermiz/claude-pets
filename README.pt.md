@@ -4,6 +4,8 @@
 
 Suas sessões do [Claude Code](https://claude.com/claude-code) como bichinhos 8-bit passeando pela parte de baixo da tela do seu Mac.
 
+[![Claude Pets promo](docs/promo/poster-en.png)](https://github.com/javiermiz/claude-pets/releases/download/v1.2.0/claude-pets-promo-en.mp4)
+
 ![Claude Pets](docs/zoo.png)
 
 ![Workers](docs/workers.png)
@@ -11,7 +13,7 @@ Suas sessões do [Claude Code](https://claude.com/claude-code) como bichinhos 8-
 - **Cada sessão trabalhando neste Mac é um bichinho.** Cada sessão sempre recebe o mesmo animal (são 23), com o nome dela flutuando acima.
 - **Dois estilos**, escolhidos no menu 🐾: bichinhos que passeiam, ou **funcionários** de escritório que digitam na mesa, fazem uma **reunião de equipe** em volta de uma mesa quando a sessão tem subagentes e pulam de alegria ao terminar.
 - **Balões de fala** dizem o que cada agente está fazendo agora (⌨️ o comando, ✏️ o arquivo que edita…) ou, quando é a sua vez, o que ele te disse.
-- **Resumos curtinhos** (opcional): se o CLI `claude` estiver logado, o Claude Haiku escreve uma frase de 7 palavras para cada balão, usando sua assinatura.
+- **Resumos curtinhos** (opcional): se o CLI `claude` estiver logado, o Claude Haiku escreve uma frase de 7 palavras para cada balão, usando sua assinatura. O menu 🐾 mostra se estão ativos e abre o `claude /login` para você.
 - **Uma notificação** (com som) quando uma sessão passa de trabalhando a esperando sua resposta. Clique para abrir a sessão.
 - Os que estão **trabalhando** andam. Os que **terminaram** deitam com um ✓ verde e esperam até você clicar.
 - **Clique** em um bichinho para ir até aquela sessão no app de desktop do Claude.

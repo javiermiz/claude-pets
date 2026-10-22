@@ -1,3 +1,6 @@
-out/
 .DS_Store
 dist/
+out/
+promo/frames/
+promo/out/
+promo/rec/

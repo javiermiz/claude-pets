@@ -4,6 +4,8 @@
 
 把你的 [Claude Code](https://claude.com/claude-code) 会话变成 8 位像素宠物，在 Mac 屏幕底部走来走去。
 
+[![Claude Pets promo](docs/promo/poster-en.png)](https://github.com/javiermiz/claude-pets/releases/download/v1.2.0/claude-pets-promo-en.mp4)
+
 ![Claude Pets](docs/zoo.png)
 
 ![Workers](docs/workers.png)
@@ -11,7 +13,7 @@
 - **这台 Mac 上每个正在工作的会话都是一只宠物。** 同一个会话总是同一种动物（共 23 种），头顶显示会话名称。
 - **两种风格**，在 🐾 菜单中选择：四处走动的宠物，或坐在办公桌前打字的**打工人**——当会话有子代理时他们会围着桌子开**团队会议**，完成后会开心地跳起来。
 - **对话气泡**显示每个代理此刻在做什么（⌨️ 命令、✏️ 正在编辑的文件……），轮到你时显示它最后对你说的话。
-- **迷你摘要**（可选）：如果 `claude` CLI 已登录，Claude Haiku 会为每个气泡写一句 7 个词的摘要，使用你的订阅。
+- **迷你摘要**（可选）：如果 `claude` CLI 已登录，Claude Haiku 会为每个气泡写一句 7 个词的摘要，使用你的订阅。 🐾 菜单会显示是否开启，并可直接打开 `claude /login`。
 - 当会话从工作中变为等待你回复时，会弹出**通知**（带声音）。点击即可打开该会话。
 - **工作中**的宠物四处走动；**已完成**的会躺下并显示绿色 ✓，等你点击。
 - **点击**宠物即可在 Claude 桌面应用中打开对应会话。

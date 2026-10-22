@@ -4,6 +4,8 @@
 
 Deine [Claude Code](https://claude.com/claude-code)-Sitzungen als 8-Bit-Haustiere, die am unteren Rand deines Mac-Bildschirms herumlaufen.
 
+[![Claude Pets promo](docs/promo/poster-en.png)](https://github.com/javiermiz/claude-pets/releases/download/v1.2.0/claude-pets-promo-en.mp4)
+
 ![Claude Pets](docs/zoo.png)
 
 ![Workers](docs/workers.png)
@@ -11,7 +13,7 @@ Deine [Claude Code](https://claude.com/claude-code)-Sitzungen als 8-Bit-Haustier
 - **Jede arbeitende Sitzung auf diesem Mac ist ein Haustier.** Eine Sitzung bekommt immer dasselbe Tier (es gibt 23), mit ihrem Namen darüber.
 - **Zwei Stile**, wählbar im 🐾-Menü: Haustiere, die herumlaufen, oder **Büroangestellte**, die an ihrem Schreibtisch tippen, ein **Team-Meeting** um einen Tisch abhalten, wenn ihre Sitzung Subagenten hat, und vor Freude springen, wenn sie fertig sind.
 - **Sprechblasen** zeigen, was jeder Agent gerade macht (⌨️ der Befehl, ✏️ die Datei, die er bearbeitet…) oder, wenn du dran bist, was er dir gesagt hat.
-- **Mini-Zusammenfassungen** (optional): Ist die `claude`-CLI angemeldet, schreibt Claude Haiku für jede Blase einen Satz mit 7 Wörtern – über dein Abo.
+- **Mini-Zusammenfassungen** (optional): Ist die `claude`-CLI angemeldet, schreibt Claude Haiku für jede Blase einen Satz mit 7 Wörtern – über dein Abo. Das 🐾-Menü zeigt, ob sie aktiv sind, und öffnet `claude /login` für dich.
 - **Eine Benachrichtigung** (mit Ton), wenn eine Sitzung vom Arbeiten zum Warten auf deine Antwort wechselt. Ein Klick öffnet die Sitzung.
 - **Arbeitende** Tiere laufen herum. **Fertige** legen sich mit einem grünen ✓ hin und warten auf deinen Klick.
 - **Klicke** auf ein Tier, um zu seiner Sitzung in der Claude-Desktop-App zu springen.

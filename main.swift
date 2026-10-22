@@ -70,10 +70,15 @@ func short(_ t: String, _ n: Int = 70) -> String {
 final class Summarizer {
     static let shared = Summarizer()
     static let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches/claude-pets")
+    enum Status { case checking, on, needsLogin, noCLI }
+    private(set) var status = Status.checking
     private var cache: [String: (input: String, text: String, at: Date)] = [:]
     private var running = false, pausedUntil = Date.distantPast
-    private let exe: URL? = ["~/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+    let exe: URL? = ["~/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
         .map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+
+    init() { if exe == nil { status = .noCLI } }
+    func retrySoon() { pausedUntil = .distantPast } // after the user logs in
 
     func label(_ key: String, input: String, every: TimeInterval) -> String? {
         let c = cache[key]
@@ -95,24 +100,35 @@ final class Summarizer {
         \(input)
         """
         let p = Process()
-        p.executableURL = exe
-        p.arguments = ["-p", "--model", "haiku", "--no-session-persistence", prompt]
+        // only the model call: no tools, hooks, plugins, MCP servers or project settings. And inside a sandbox that
+        // walls off Documents, Desktop and Downloads, so macOS never asks the user to let Claude Pets into them.
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let walls = ["Documents", "Desktop", "Downloads"].map { "(subpath \"\(home)/\($0)\")" }.joined(separator: " ")
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
+        p.arguments = ["-p", "(version 1)(allow default)(deny file-read* file-write* \(walls))", exe.path,
+                       "-p", "--restricted", "--strict-mcp-config", "--tools", "", "--disable-slash-commands",
+                       "--model", "haiku", "--no-session-persistence", prompt]
+        p.standardInput = FileHandle.nullDevice
         p.currentDirectoryURL = Summarizer.dir // its own session file lands here, so the app can skip it
-        let pipe = Pipe()
+        let pipe = Pipe(), errPipe = Pipe()
         p.standardOutput = pipe
-        p.standardError = FileHandle.nullDevice
+        p.standardError = errPipe
         p.terminationHandler = { [weak self] proc in
-            let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"'."))
+            let raw = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            let err = String(decoding: errPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            let out = raw.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"'."))
             DispatchQueue.main.async {
                 guard let self else { return }
                 let ok = proc.terminationStatus == 0 && !out.isEmpty && out.count < 120
-                if !ok { self.pausedUntil = Date().addingTimeInterval(600) }
+                let loggedOut = (raw + err).range(of: #"log ?in|authenticat|OAuth"#, options: [.regularExpression, .caseInsensitive]) != nil
+                if ok { self.status = .on }
+                else if loggedOut { self.status = .needsLogin; self.pausedUntil = Date().addingTimeInterval(60) }
+                else { self.pausedUntil = Date().addingTimeInterval(600) }
                 self.cache[key] = (input, ok ? out : self.cache[key]?.text ?? "", Date())
                 self.running = false
             }
         }
-        do { try p.run() } catch { running = false; pausedUntil = Date().addingTimeInterval(600) }
+        do { try p.run() } catch { running = false; status = .noCLI; pausedUntil = Date().addingTimeInterval(600) }
     }
 }
 func firstLine(_ t: String) -> String? {
@@ -153,10 +169,11 @@ final class Store: ObservableObject {
 
     init() {
         load()
-        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.load() }
+        Timer.scheduledTimer(withTimeInterval: demo ? 0.5 : 2, repeats: true) { [weak self] _ in self?.load() }
     }
 
     func load() {
+        if demo { return demoLoad() }
         let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         all = files.filter { $0.pathExtension == "json" }
             .compactMap { try? JSONDecoder().decode(Session.self, from: Data(contentsOf: $0)) }
@@ -260,12 +277,64 @@ final class Store: ObservableObject {
     }
 
     func open(_ s: Session) {
+        if demo { return }
         if let id = s.hostSessionId, let url = URL(string: "claude://code/continue?session=\(id)") {
             NSWorkspace.shared.open(url)
         }
         if !s.busy { seenBusy.remove(s.id); load() }
     }
 }
+
+// Demo mode (`--demo`, for screen recordings): a scripted ~60 s story with example sessions instead of
+// the real ones. Nothing is read from ~/.claude and clicks open nothing.
+let demo = CommandLine.arguments.contains("--demo")
+let demoStart = Date()
+var demoPets = false
+var demoHover: String?
+
+extension Store {
+    func demoLoad() {
+        let t = Date().timeIntervalSince(demoStart).truncatingRemainder(dividingBy: 60)
+        func at(_ sec: Double) -> Double { (demoStart.timeIntervalSince1970 + sec - 60) * 1000 }
+        func session(_ key: String, _ name: String, _ dir: String, busy: Bool, since: Double, waiting: Int? = nil) -> Session {
+            Session(pid: 0, sessionId: key, cwd: "/Users/demo/" + dir, name: name, status: busy ? "busy" : "idle",
+                    statusUpdatedAt: at(since), hostSessionId: nil, waiting: waiting)
+        }
+        func pick(_ steps: [(Double, String)]) -> String { steps.last { t >= $0.0 }?.1 ?? steps[0].1 }
+        let es = lang == "es"
+        func L(_ en: String, _ esText: String) -> String { es ? esText : en }
+
+        var list = [session("0b9e3c2a-5d41-4f7e-9a10-demo00000001", L("Fix checkout bug", "Arreglar el checkout"), "shop-web", busy: t < 20, since: t < 20 ? 0 : 20)]
+        list.append(session("7c1f9d84-2e6b-4a33-b5c2-demo00000002", L("Add dark mode", "Modo oscuro"), "mobile-app", busy: true, since: 0))
+        if t >= 4 { list.append(session("e4a7b015-9c3d-4d28-8f61-demo00000003", L("Write API docs", "Documentar la API"), "api", busy: t < 26, since: t < 26 ? 4 : 26, waiting: t >= 26 ? 1 : nil)) }
+
+        labels = [
+            "0b9e3c2a-5d41-4f7e-9a10-demo00000001": t < 20 ? pick([(0, L("Reproducing the checkout crash", "Reproduciendo el error del checkout")), (7, L("Fixing the empty cart total", "Arreglando el total vacío del carrito")), (14, L("Running the payment tests", "Ejecutando las pruebas de pagos"))])
+                        : L("Fixed the crash, asks to merge", "Listo, pregunta si hace merge"),
+            "7c1f9d84-2e6b-4a33-b5c2-demo00000002": pick([(0, L("Mapping colors to theme tokens", "Pasando colores a tokens del tema")), (8, L("Splitting the work with two helpers", "Repartiendo el trabajo en equipo")), (30, L("Polishing the toggle animation", "Puliendo la animación del interruptor"))]),
+            "e4a7b015-9c3d-4d28-8f61-demo00000003": pick([(4, L("Documenting the auth endpoints", "Documentando los endpoints de login")), (14, L("Adding request examples", "Agregando ejemplos de solicitudes")), (26, L("Waiting for the docs build", "Esperando el build de la documentación"))]),
+        ]
+        activities = [
+            "0b9e3c2a-5d41-4f7e-9a10-demo00000001": Activity(doing: t < 20 ? pick([(0, "⌨️ Run the checkout flow"), (7, "✏️ cart.ts"), (14, "⌨️ npm test payments")]) : nil,
+                          said: t < 20 ? nil : L("💬 Fixed: the cart total is no longer empty. All 42 payment tests pass. Merge it?", "💬 Listo: el total del carrito ya no sale vacío. Pasan las 42 pruebas de pagos. ¿Hago el merge?")),
+            "7c1f9d84-2e6b-4a33-b5c2-demo00000002": Activity(doing: pick([(0, "🔎 #1b1630"), (8, "🤖 " + L("Audit color tokens", "Auditar tokens de color")), (30, "✏️ ThemeToggle.swift")]), said: nil),
+            "e4a7b015-9c3d-4d28-8f61-demo00000003": Activity(doing: pick([(4, "📖 routes/auth.ts"), (14, "✏️ docs/auth.md"), (26, "⌨️ npm run docs:build")]), said: nil),
+        ]
+        subagents = ["7c1f9d84-2e6b-4a33-b5c2-demo00000002": t >= 8 && t < 30 ? [
+            Subagent(id: "a91c4e70-1b2f-4c8d-9e35-demo0000b001", desc: L("Audit color tokens", "Auditar tokens de color"), doing: "🔎 hex colors"),
+            Subagent(id: "3d58f2c6-7a90-4e14-b6d8-demo0000b002", desc: L("Update the settings screen", "Actualizar la pantalla de ajustes"), doing: "✏️ SettingsView.swift"),
+            Subagent(id: "c2e7a913-4f6b-48d0-a1c5-demo0000b003", desc: L("Check contrast ratios", "Revisar el contraste"), doing: "⌨️ contrast-check"),
+        ] : []]
+        demoHover = t >= 36 && t < 46 ? "0b9e3c2a-5d41-4f7e-9a10-demo00000001" : nil
+        demoPets = t >= 46
+        // the real notification, once per loop, when L("Fix checkout bug", "Arreglar el checkout") finishes
+        if t >= 20 && t < 20.6 && !demoNotified { demoNotified = true; notifyReady(list[0]) }
+        if t < 1 { demoNotified = false }
+        all = list
+        sessions = list
+    }
+}
+var demoNotified = false
 
 // 2. World — a 30 fps tick moves busy pets along the floor; idle ones nap in place
 final class World: ObservableObject {
@@ -306,6 +375,7 @@ final class World: ObservableObject {
     func facingRight(_ s: Session) -> Bool { (vx[s.id] ?? -1) > 0 }
 
     func tick() {
+        if demo { hovered = demoHover }
         let dt = 1.0 / 30
         t += dt
         for s in store.sessions where s.busy && s.id != hovered {
@@ -360,7 +430,7 @@ let office: [String: [CGImage]] = { // desk (3 frames: code, code, off), chair, 
     }
     return out
 }()
-var workers: Bool { UserDefaults.standard.string(forKey: "style") == "workers" && !workerSprites.isEmpty }
+var workers: Bool { (demo ? !demoPets : UserDefaults.standard.string(forKey: "style") == "workers") && !workerSprites.isEmpty }
 func walkFrame(_ step: Int) -> Int { workers ? [6, 7, 6, 8][step % 4] : step % 4 }
 var standFrame: Int { workers ? 6 : 1 }
 func doneFrame(_ t: Double) -> Int { workers ? (Int(t * 3) % 2 == 0 ? 11 : 0) : 4 } // workers jump for joy, pets lie down
@@ -371,29 +441,45 @@ func frames(_ key: String) -> [CGImage] { // low bits barely vary across uuids
     return set[Int((seed(key) >> 13) % UInt32(set.count))]
 }
 func frames(for s: Session) -> [CGImage] { frames(s.sessionId) }
+func workerFrames(_ key: String) -> [CGImage] { workerSprites[Int((seed(key) >> 13) % UInt32(max(1, workerSprites.count)))] }
+// views can still be drawn once with the other style's sprites while the style changes: never index past the end
+extension Array { subscript(safe i: Int) -> Element { self[Swift.min(Swift.max(i, 0), count - 1)] } }
 
-func ago(_ d: Date) -> String { RelativeDateTimeFormatter().localizedString(for: d, relativeTo: Date()) }
+func ago(_ d: Date) -> String { // in the app's language, not the Mac's
+    let f = RelativeDateTimeFormatter()
+    f.locale = Locale(identifier: lang)
+    return f.localizedString(for: d, relativeTo: Date())
+}
 
 // UI strings follow the system language; anything missing falls back to English
 let keys = ["Untitled", "Working · %@", "Waiting on %d in background", "Finished %@", "Started by %@", "Sub-sessions",
-            "Subagents working", "Click to open", "Finished · click to see it", "Open at login", "Quit", "Subagent", "Chat (scratch)", "Pets", "Workers", "Ready for your reply"]
+            "Subagents working", "Click to open", "Finished · click to see it", "Open at login", "Quit", "Subagent", "Chat (scratch)", "Pets", "Workers", "Ready for your reply",
+            "AI summaries on", "Turn on AI summaries (claude /login)…", "AI summaries need the Claude Code CLI…", "AI summaries: checking…"]
 let table: [String: [String]] = [
     "es": ["Sin nombre", "Trabajando · %@", "Esperando %d en segundo plano", "Terminó %@", "Lanzada por %@", "Sub-sesiones",
-           "Subagentes trabajando", "Clic para abrir", "Terminó · clic para verlo", "Abrir al iniciar sesión", "Salir", "Subagente", "Chat (scratch)", "Mascotas", "Trabajadores", "Listo para tu respuesta"],
+           "Subagentes trabajando", "Clic para abrir", "Terminó · clic para verlo", "Abrir al iniciar sesión", "Salir", "Subagente", "Chat (scratch)", "Mascotas", "Trabajadores", "Listo para tu respuesta",
+           "Resúmenes con IA activos", "Activar resúmenes con IA (claude /login)…", "Los resúmenes con IA necesitan el CLI de Claude Code…", "Resúmenes con IA: comprobando…"],
     "pt": ["Sem nome", "Trabalhando · %@", "Aguardando %d em segundo plano", "Terminou %@", "Iniciada por %@", "Subsessões",
-           "Subagentes trabalhando", "Clique para abrir", "Terminou · clique para ver", "Abrir ao iniciar sessão", "Sair", "Subagente", "Chat (scratch)", "Mascotes", "Trabalhadores", "Pronto para sua resposta"],
+           "Subagentes trabalhando", "Clique para abrir", "Terminou · clique para ver", "Abrir ao iniciar sessão", "Sair", "Subagente", "Chat (scratch)", "Mascotes", "Trabalhadores", "Pronto para sua resposta",
+           "Resumos com IA ativos", "Ativar resumos com IA (claude /login)…", "Os resumos com IA precisam do CLI do Claude Code…", "Resumos com IA: verificando…"],
     "fr": ["Sans nom", "Au travail · %@", "En attente de %d en arrière-plan", "Terminé %@", "Lancée par %@", "Sous-sessions",
-           "Sous-agents au travail", "Cliquer pour ouvrir", "Terminé · cliquer pour voir", "Ouvrir à la connexion", "Quitter", "Sous-agent", "Chat (scratch)", "Animaux", "Employés", "Prêt pour ta réponse"],
+           "Sous-agents au travail", "Cliquer pour ouvrir", "Terminé · cliquer pour voir", "Ouvrir à la connexion", "Quitter", "Sous-agent", "Chat (scratch)", "Animaux", "Employés", "Prêt pour ta réponse",
+           "Résumés IA activés", "Activer les résumés IA (claude /login)…", "Les résumés IA nécessitent le CLI Claude Code…", "Résumés IA : vérification…"],
     "de": ["Ohne Namen", "Arbeitet · %@", "Wartet auf %d im Hintergrund", "Fertig %@", "Gestartet von %@", "Untersitzungen",
-           "Arbeitende Subagenten", "Zum Öffnen klicken", "Fertig · zum Ansehen klicken", "Bei Anmeldung öffnen", "Beenden", "Subagent", "Chat (scratch)", "Haustiere", "Mitarbeiter", "Bereit für deine Antwort"],
+           "Arbeitende Subagenten", "Zum Öffnen klicken", "Fertig · zum Ansehen klicken", "Bei Anmeldung öffnen", "Beenden", "Subagent", "Chat (scratch)", "Haustiere", "Mitarbeiter", "Bereit für deine Antwort",
+           "KI-Zusammenfassungen an", "KI-Zusammenfassungen aktivieren (claude /login)…", "KI-Zusammenfassungen brauchen die Claude-Code-CLI…", "KI-Zusammenfassungen: wird geprüft…"],
     "it": ["Senza nome", "Al lavoro · %@", "In attesa di %d in background", "Finito %@", "Avviata da %@", "Sottosessioni",
-           "Subagenti al lavoro", "Clicca per aprire", "Finito · clicca per vederlo", "Apri al login", "Esci", "Subagente", "Chat (scratch)", "Animaletti", "Impiegati", "Pronto per la tua risposta"],
+           "Subagenti al lavoro", "Clicca per aprire", "Finito · clicca per vederlo", "Apri al login", "Esci", "Subagente", "Chat (scratch)", "Animaletti", "Impiegati", "Pronto per la tua risposta",
+           "Riassunti IA attivi", "Attiva i riassunti IA (claude /login)…", "I riassunti IA richiedono la CLI di Claude Code…", "Riassunti IA: verifica…"],
     "ja": ["無題", "作業中 · %@", "バックグラウンドで%d件待機中", "完了 %@", "起動元: %@", "サブセッション",
-           "作業中のサブエージェント", "クリックで開く", "完了 · クリックで表示", "ログイン時に開く", "終了", "サブエージェント", "チャット (scratch)", "ペット", "ワーカー", "あなたの返信待ちです"],
+           "作業中のサブエージェント", "クリックで開く", "完了 · クリックで表示", "ログイン時に開く", "終了", "サブエージェント", "チャット (scratch)", "ペット", "ワーカー", "あなたの返信待ちです",
+           "AI 要約: オン", "AI 要約をオンにする (claude /login)…", "AI 要約には Claude Code CLI が必要です…", "AI 要約: 確認中…"],
     "zh": ["未命名", "工作中 · %@", "正在等待 %d 个后台任务", "已完成 %@", "由 %@ 启动", "子会话",
-           "工作中的子代理", "点击打开", "已完成 · 点击查看", "登录时打开", "退出", "子代理", "聊天 (scratch)", "宠物", "打工人", "等你回复"],
+           "工作中的子代理", "点击打开", "已完成 · 点击查看", "登录时打开", "退出", "子代理", "聊天 (scratch)", "宠物", "打工人", "等你回复",
+           "AI 摘要已开启", "开启 AI 摘要 (claude /login)…", "AI 摘要需要 Claude Code CLI…", "AI 摘要：检查中…"],
     "ko": ["이름 없음", "작업 중 · %@", "백그라운드 작업 %d개 대기 중", "완료 %@", "시작한 세션: %@", "하위 세션",
-           "작업 중인 서브에이전트", "클릭하여 열기", "완료 · 클릭하여 보기", "로그인 시 열기", "종료", "서브에이전트", "채팅 (scratch)", "펫", "직원", "답장을 기다리고 있어요"],
+           "작업 중인 서브에이전트", "클릭하여 열기", "완료 · 클릭하여 보기", "로그인 시 열기", "종료", "서브에이전트", "채팅 (scratch)", "펫", "직원", "답장을 기다리고 있어요",
+           "AI 요약 켜짐", "AI 요약 켜기 (claude /login)…", "AI 요약에는 Claude Code CLI가 필요해요…", "AI 요약: 확인 중…"],
 ]
 // the app's language: picked in the menu bar, or the Mac's own
 var lang: String { UserDefaults.standard.string(forKey: "lang") ?? Locale.preferredLanguages.first?.components(separatedBy: "-").first ?? "en" }
@@ -447,10 +533,10 @@ struct PetView: View {
         let f = frames(for: s)
         // working: walk cycle; done: lies down (pets) or cheers (workers) and waits for a click
         let i = !s.busy ? doneFrame(world.t) : hovered ? standFrame : walkFrame(Int(world.t * 8) + Int(seed(s) % 4))
-        Image(decorative: f[i], scale: 1)
+        Image(decorative: f[safe: i], scale: 1)
             .interpolation(.none)
             .resizable()
-            .frame(width: CGFloat(f[i].width) * 3, height: CGFloat(f[i].height) * 3)
+            .frame(width: CGFloat(f[safe: i].width) * 3, height: CGFloat(f[safe: i].height) * 3)
             .scaleEffect(x: world.facingRight(s) ? 1 : -1) // sprites face right
             .scaleEffect(hovered ? 1.2 : 1, anchor: .bottom)
             .offset(y: i == 11 ? -6 : 0) // the cheer is a little jump
@@ -497,23 +583,23 @@ struct Station: View {
     var body: some View {
         let t = world.t
         let subs = Array((world.store.subagents[s.id] ?? []).prefix(5))
-        let me = frames(for: s)
-        let cheer = doneFrame(t)
+        let me = workerFrames(s.sessionId)
+        let cheer = workers ? doneFrame(t) : 11
         ZStack(alignment: .bottomLeading) {
             if subs.isEmpty { // at the desk
                 px(office["chair_side"]?.first, x: 0)
-                if s.busy { px(me[s.turn ? 9 + Int(t * 5) % 2 : 9], x: 1, up: 1) }
-                else { px(me[cheer], x: -1, up: cheer == 11 ? 3 : 0) } // done: up and cheering
+                if s.busy { px(me[safe: s.turn ? 9 + Int(t * 5) % 2 : 9], x: 1, up: 1) }
+                else { px(me[safe: cheer], x: -1, up: cheer == 11 ? 3 : 0) } // done: up and cheering
                 px(office["desk_side"]?[s.turn ? Int(t * 2) % 2 : 2], x: 12)
             } else {          // team meeting: half on each side of the table, the speaker takes turns
-                let team = [me] + subs.map { frames($0.id) }
+                let team = [me] + subs.map { workerFrames($0.id) }
                 let left = (team.count + 1) / 2
                 let speaker = Int(t / 2.5) % team.count
                 ForEach(0..<team.count, id: \.self) { i in
                     let x = i < left ? CGFloat(i * 14) : CGFloat(left * 14 + 34 + (i - left) * 14)
                     let talking = i == speaker && s.busy
                     let f = i == 0 && !s.busy ? cheer : 6
-                    px(team[i][f], x: x, up: (talking && Int(t * 4) % 2 == 0 ? 1 : 0) + (f == 11 ? 3 : 0), flip: i >= left)
+                    px(team[i][safe: f], x: x, up: (talking && Int(t * 4) % 2 == 0 ? 1 : 0) + (f == 11 ? 3 : 0), flip: i >= left)
                 }
                 px(office["meeting_table"]?.first, x: CGFloat(left * 14 + 2))
             }
@@ -605,7 +691,7 @@ struct ContentView: View {
                     ForEach(Array((store.subagents[s.id] ?? []).enumerated()), id: \.element.id) { k, a in
                         let f = frames(a.id)
                         let d = world.sub[s.id + a.id] ?? (world.pos(s), true, false)
-                        Image(decorative: f[d.moving ? walkFrame(Int(world.t * 10) + k) : standFrame], scale: 1)
+                        Image(decorative: f[safe: d.moving ? walkFrame(Int(world.t * 10) + k) : standFrame], scale: 1)
                             .interpolation(.none).resizable()
                             .frame(width: CGFloat(f[0].width) * 2, height: CGFloat(f[0].height) * 2)
                             .scaleEffect(x: d.right ? 1 : -1)
@@ -620,11 +706,16 @@ struct ContentView: View {
                 }
                 }
                 if let s = store.sessions.first(where: { $0.id == world.hovered }) {
-                    Card(s: s, store: store)
-                        .position(x: min(max(world.anchor(s), 160), geo.size.width - 160), y: floor - 70)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-                        .allowsHitTesting(false)
-                        .zIndex(3)
+                    // bottom-anchored just above the bubbles and name tags; grows upward with its content
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        Card(s: s, store: store)
+                        Color.clear.frame(height: workers ? 150 : 110)
+                    }
+                    .frame(width: 300, height: geo.size.height)
+                    .position(x: min(max(world.anchor(s), 160), geo.size.width - 160), y: geo.size.height / 2)
+                    .allowsHitTesting(false)
+                    .zIndex(3)
                 }
             }
             .onAppear { world.width = geo.size.width }
@@ -650,7 +741,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let screen = NSScreen.main!.visibleFrame
         // full-width strip along the bottom; transparent pixels let clicks through
-        panel = NSPanel(contentRect: NSRect(x: screen.minX, y: screen.minY, width: screen.width, height: 220),
+        panel = NSPanel(contentRect: NSRect(x: screen.minX, y: screen.minY, width: screen.width, height: 480), // tall enough for the hover card
                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = .floating
         panel.backgroundColor = .clear
@@ -659,10 +750,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = NSHostingView(rootView: ContentView())
         panel.orderFrontRegardless()
+        if demo { showDemoBackdrop(screen: NSScreen.main!) }
     }
 
     @objc func pickPets() { UserDefaults.standard.set("pets", forKey: "style") }
     @objc func pickWorkers() { UserDefaults.standard.set("workers", forKey: "style") }
+
+    // Demo recordings: the user's own wallpaper over every window (so nothing private shows), the strip
+    // on top, and this app in the menu bar instead of whatever was in front.
+    var backdrop: NSWindow?
+    func showDemoBackdrop(screen: NSScreen) {
+        let w = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        w.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
+        w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        w.ignoresMouseEvents = true
+        let v = NSView(frame: screen.frame)
+        v.wantsLayer = true
+        v.layer?.backgroundColor = NSColor(red: 0.16, green: 0.12, blue: 0.3, alpha: 1).cgColor
+        if let url = NSWorkspace.shared.desktopImageURL(for: screen), let img = NSImage(contentsOf: url) {
+            v.layer?.contents = img
+            v.layer?.contentsGravity = .resizeAspectFill
+        }
+        w.contentView = v
+        w.orderFrontRegardless()
+        backdrop = w
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate()
+    }
 
     @objc func toggleLogin() {
         let app = SMAppService.mainApp
@@ -704,8 +818,27 @@ extension AppDelegate: NSMenuDelegate {
         menu.addItem(langItem)
         menu.addItem(item(tr("Open at login"), #selector(toggleLogin), on: SMAppService.mainApp.status == .enabled))
         menu.addItem(.separator())
+        switch Summarizer.shared.status { // the AI summaries: what's their state, and how to turn them on
+        case .on: menu.addItem(item(tr("AI summaries on"), #selector(noop), on: true))
+        case .needsLogin: menu.addItem(item(tr("Turn on AI summaries (claude /login)…"), #selector(loginCLI)))
+        case .noCLI: menu.addItem(item(tr("AI summaries need the Claude Code CLI…"), #selector(installCLI)))
+        case .checking: let i = item(tr("AI summaries: checking…"), #selector(noop)); i.isEnabled = false; menu.addItem(i)
+        }
+        menu.addItem(.separator())
         menu.addItem(item(tr("Quit"), #selector(NSApplication.terminate(_:)), key: "q"))
     }
+    @objc func noop() {}
+    // opens Terminal running `claude /login` (a .command file needs no automation permission)
+    @objc func loginCLI() {
+        guard let exe = Summarizer.shared.exe else { return installCLI() }
+        let script = Summarizer.dir.appendingPathComponent("login.command")
+        try? FileManager.default.createDirectory(at: Summarizer.dir, withIntermediateDirectories: true)
+        try? "#!/bin/zsh -l\n'\(exe.path)' /login\n".write(to: script, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        NSWorkspace.shared.open(script)
+        Summarizer.shared.retrySoon()
+    }
+    @objc func installCLI() { NSWorkspace.shared.open(URL(string: "https://claude.com/claude-code")!) }
     @objc func pickLanguage(_ sender: NSMenuItem) { UserDefaults.standard.set(sender.representedObject as? String, forKey: "lang") }
 }
 

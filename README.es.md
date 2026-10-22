@@ -4,6 +4,8 @@
 
 Tus sesiones de [Claude Code](https://claude.com/claude-code) como mascotas 8-bit que pasean por la parte de abajo de la pantalla de tu Mac.
 
+[![Claude Pets promo](docs/promo/poster-es.png)](https://github.com/javiermiz/claude-pets/releases/download/v1.2.0/claude-pets-promo-es.mp4)
+
 ![Claude Pets](docs/zoo.png)
 
 ![Workers](docs/workers.png)
@@ -11,11 +13,11 @@ Tus sesiones de [Claude Code](https://claude.com/claude-code) como mascotas 8-bi
 - **Cada sesión que trabaja en este Mac es una mascota.** A cada sesión le toca siempre el mismo animal (hay 23) y lleva su nombre encima.
 - **Dos estilos**, a elegir en el menú 🐾: mascotas que pasean, o **trabajadores** de oficina que teclean en su escritorio, hacen una **reunión de equipo** alrededor de una mesa cuando su sesión tiene subagentes y saltan de alegría al terminar.
 - **Burbujas** que dicen qué hace cada agente en ese momento (⌨️ el comando, ✏️ el archivo que edita…) o, cuando te toca, qué te dijo.
-- **Resúmenes cortitos** (opcional): si el CLI `claude` tiene sesión iniciada, Claude Haiku escribe una frase de 7 palabras para cada burbuja, con tu suscripción.
+- **Resúmenes cortitos** (opcional): si el CLI `claude` tiene sesión iniciada, Claude Haiku escribe una frase de 7 palabras para cada burbuja, con tu suscripción. El menú 🐾 te dice si están activos y abre `claude /login` por ti.
 - **Una notificación** (con sonido) cuando una sesión pasa de trabajar a esperar tu respuesta. Al pulsarla se abre la sesión.
 - Las que **trabajan** caminan. Las que **terminaron** se tumban con un ✓ verde y esperan a que les hagas clic.
 - **Clic** en una mascota para ir a esa sesión en la app de escritorio de Claude.
-- **Pasa el ratón** por encima para ver una tarjeta: proyecto, estado, desde cuándo, sub-sesiones y subagentes activos.
+- **Pasa el cursor** por encima para ver una tarjeta: proyecto, estado, desde cuándo, sub-sesiones y subagentes activos.
 - Los **subagentes** siguen a su sesión como mascotas pequeñas en fila. Las **sub-sesiones** lanzadas desde otra sesión llevan una `↳`.
 - **El trabajo en segundo plano cuenta:** una sesión que espera comandos o subagentes en segundo plano muestra ⏳ hasta que terminan. Los comandos que llevan más de 10 minutos (vigilantes, servidores) no cuentan.
 - **Los clics atraviesan** el espacio vacío, así que la franja nunca estorba.

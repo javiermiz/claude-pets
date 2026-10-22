@@ -1,0 +1,19 @@
+{
+  "name": "claude-pets-promo",
+  "private": true,
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts Promo out/promo.mp4 --browser-executable \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\""
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.537",
+    "@remotion/google-fonts": "4.0.537",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "remotion": "4.0.537"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.12",
+    "typescript": "5.9.2"
+  }
+}
